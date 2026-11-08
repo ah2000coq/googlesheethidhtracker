@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<?!= include('Styles'); ?>
+</head>
+<body>
+<?!= include('Header'); ?>
+<main class="wrap content">
+<div class="page-head capture-head">
+  <div><h2>Murajah progress <span class="ar-title" lang="ar" dir="rtl">المراجعة</span></h2>
+  <p class="lead">Record revision a student recited, page to page or surah to surah. The juz it covers are marked as revised on this date.</p></div>
+</div>
+<div id="picker" class="picker"></div>
+<div id="notice" role="status" class="notice" hidden></div>
+<div id="main"></div>
+
+<p class="foot">Records are saved in the class Google Sheet. Use <a data-nav="backup">Backup</a> to download a copy.</p>
+</main>
+<script>const BOOT = <?!= boot ?>;</script>
+<?!= include('Common'); ?>
+<?!= include('Quran'); ?>
+<script>
+// ===== Page: Murajah progress =====
+// ===== Murajah progress: capture revision =====
+function refresh() {
+  const db = loadDB(), id = param("id");
+  if (!studentPicker(db, id, refresh)) return ($("#main").innerHTML = noStudents());
+  const s = id && findStudent(db, id);
+  if (!s) return ($("#main").innerHTML = `<p class="small-muted">Choose the student who is revising.</p>`);
+  const lastM = sessionsFor(db, s.id).find((e) => e.type === "murajah" && e.ranges?.length);
+  const lastR = lastM?.ranges.at(-1);
+  let sug = null;
+  if (lastR?.mode === "page" && lastR.to < TOTAL_PAGES) { const len = lastR.to - lastR.from + 1, f = lastR.to + 1, t = Math.min(TOTAL_PAGES, f + len - 1); sug = { preset: { mode: "page", from: f, to: t }, label: `Pages ${f}–${t}` }; }
+  if (lastR?.mode === "surah") { const hi = Math.max(lastR.from, lastR.to); if (hi < 114) sug = { preset: { mode: "surah", from: hi + 1, to: hi + 1 }, label: `From ${sName(hi + 1)}` }; }
+
+  $("#main").innerHTML = `<form id="form" class="capture" novalidate>
+    <div class="panel wide student-strip">
+      <div class="profile-photo sm">${avatar(s)}</div>
+      <div class="strip-main"><strong>${esc(s.name)}</strong>
+        <span class="small-muted">${s.latestRev ? `Last murajah ${fmtDate(s.latestRevDate)}: ${esc(s.latestRev)}` : "No murajah recorded yet"}</span></div>
+      <div class="strip-stat"><strong>${s.revDates.filter(Boolean).length}</strong><span>juz revised so far</span></div>
+      ${sug ? `<button type="button" class="primary-gold cont" id="cont">${icon("right")} Continue: ${esc(sug.label)}</button>` : ""}
+    </div>
+    <div class="capture-grid">
+      <div class="capture-col">
+        <div class="panel wide">
+          <div class="row-2"><label>Date<input name="date" type="date" required value="${today()}"></label></div>
+          <h3 class="block-title">Revision recited</h3>
+          <div id="portions"></div>
+          <button type="button" class="secondary-btn add-portion" id="addPortion">${icon("plus")} Add another portion</button>
+        </div>
+        <div class="panel wide">${assessmentBlock()}</div>
+      </div>
+      <div class="capture-col side">
+        <div class="panel wide sticky">
+          <h3 class="block-title">Juz revised</h3>
+          <p class="small-muted" id="revNote">Pick pages or surahs to see which juz this covers.</p>
+          <div id="revJuz" class="rev-chips"></div>
+          <div class="juz-mini" id="juzMini"></div>
+          <div class="actions"><a class="secondary-btn" href="${link("profile", { id: s.id })}">Cancel</a><button class="primary-btn" type="submit">${icon("save")} Save murajah</button></div>
+        </div>
+      </div>
+    </div></form>`;
+
+  const form = $("#form"), readAssess = wireAssessment(form);
+  const covered = () => {
+    const share = Array(30).fill(0);
+    for (const p of list.all().filter((x) => !x.error)) juzShare(p.a1, p.a2).forEach((v, i) => (share[i] += v));
+    return share.map((v) => Math.min(100, Math.round(v)));
+  };
+  function recalc() {
+    if (!list) return;
+    const share = covered(), js = share.map((v, i) => [i, v]).filter(([, v]) => v > 0);
+    const pages = list.all().filter((x) => !x.error).reduce((t, p) => t + describe(p.a1, p.a2).pageCount, 0);
+    $("#revNote").textContent = js.length ? `${pages} page${pages === 1 ? "" : "s"} across ${js.length} juz. Each is marked revised on ${fmtDate(form.date.value || today())}.` : "Pick pages or surahs to see which juz this covers.";
+    $("#revJuz").innerHTML = js.map(([i, v]) => `<span class="rev-chip ${v >= 100 ? "full" : ""}" title="${revTip(i, s.revDates[i])}">Juz ${i + 1}<small>${v >= 100 ? "whole juz" : v + "%"}</small></span>`).join("");
+    $("#juzMini").innerHTML = `<div class="juz-mini-grid" aria-hidden="true">${share.map((v, i) => `<i class="${v ? "on" : ""} ${s.revDates[i] ? "was" : ""}" title="${revTip(i, s.revDates[i])}"><b style="height:${v}%"></b><span>${i + 1}</span></i>`).join("")}</div>
+      <p class="legend"><span class="lg on"></span> this murajah <span class="lg was"></span> revised before</p>`;
+  }
+  let list = null;
+  list = portionList($("#portions"), $("#addPortion"), ["page", "surah"], () => recalc());
+  form.date.addEventListener("change", recalc);
+  if ($("#cont")) $("#cont").onclick = () => { list.first().set(sug.preset); notify(`Filled in ${esc(sug.label)}.`); };
+  recalc();
+  list.first().focus();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const date = form.date.value, portions = list.all();
+    if (!DATE_RE.test(date)) return notify("Choose the date of this reading.", true);
+    const bad = portions.find((p) => p.error);
+    if (bad) return notify(`Portion ${portions.indexOf(bad) + 1}: ${bad.error}.`, true);
+    const current = findStudent(DB, s.id);
+    if (!current) return notify("This student no longer exists.", true);
+    const a = readAssess(), share = covered(), revJuz = share.map((v, i) => [i, v]).filter(([, v]) => v > 0).map(([i]) => i);
+    const juz = current.juz;   // murajah doesn't change memorisation %
+    const ranges = portions.map(({ mode, from, to, a1, a2 }) => ({ mode, from, to, a1, a2 }));
+    const text = portions.map((p) => { const d = describe(p.a1, p.a2); return p.mode === "page" ? `${d.pages} (${d.text})` : `${d.text} (${d.pages})`; }).join("; ");
+    const entry = { studentId: s.id, type: "murajah", date, mem: "", rev: text.slice(0, 500),
+      ranges, juz, revJuz, revShare: share, grade: a.grade, mistakes: a.mistakes, note: a.note };
+    const saved = await busy(form.querySelector("[type=submit]"), "Saving…", () => api("addSession", entry));
+    if (!saved) return;
+    DB.sessions.push(saved);
+    refresh();
+    notify(`Murajah saved for ${esc(s.name)}: ${esc(text)}. <a href="${link("history", { id: s.id })}">View history</a>`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+start(refresh);
+</script>
+</body>
+</html>

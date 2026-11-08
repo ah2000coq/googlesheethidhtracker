@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<?!= include('Styles'); ?>
+</head>
+<body>
+<?!= include('Header'); ?>
+<main class="wrap content">
+<div class="page-head"><h2>Backup &amp; data</h2><p class="lead">Records are saved in the class Google Sheet. Download a backup regularly; a backup from the offline version of this app can be restored here too.</p></div>
+<div id="notice" role="status" class="notice" hidden></div>
+<div class="tool-grid">
+  <div class="tool"><h3>Export spreadsheet (CSV)</h3><p>One row per Sunday entry. Opens in Excel or Google Sheets; Arabic names display correctly.</p>
+    <button class="primary-btn" id="csv"><span data-icon="download"></span> Download CSV</button></div>
+  <div class="tool"><h3>Full backup (JSON)</h3><p>Everything including photos and notes. This is the file you restore from.</p>
+    <button class="primary-btn" id="json"><span data-icon="download"></span> Download backup</button></div>
+  <div class="tool"><h3>Restore from backup</h3><p>Replaces all records in the Google Sheet with the contents of a backup file.</p>
+    <span class="secondary-btn file-btn" style="display:inline-flex"><span data-icon="upload"></span> Choose backup file<input type="file" id="restore" accept=".json,application/json" aria-label="Choose backup file"></span></div>
+  <div class="tool"><h3>Try with demo data</h3><p>Adds four sample students with a few weeks of history, so you can explore every page.</p>
+    <button class="secondary-btn" id="demo"><span data-icon="users"></span> Add demo students</button></div>
+  <div class="tool danger"><h3>Erase everything</h3><p>Deletes every student and entry from the Google Sheet. Download a backup first.</p>
+    <button class="secondary-btn danger-text" id="wipe"><span data-icon="trash"></span> Erase all records</button></div>
+</div>
+<p class="meter" id="meter"></p>
+
+<p class="foot">Records are saved in the class Google Sheet. Use <a data-nav="backup">Backup</a> to download a copy.</p>
+</main>
+<script>const BOOT = <?!= boot ?>;</script>
+<?!= include('Common'); ?>
+<script>
+// ===== Page: Backup & data =====
+const stamp = () => today();
+const ready = () => DB || (notify("Still loading the class records — try again in a moment.", true), null);
+function refresh() {
+  const db = loadDB(); if (!db) return;
+  const counts = `${db.students.length} students · ${db.sessions.length} Sunday entries`;
+  $("#meter").textContent = counts;
+  api("getStats").then((st) => {
+    $("#meter").innerHTML = `${counts} · saved in the Google Sheet <a href="${esc(st.sheetUrl)}" target="_blank" rel="noopener">${esc(st.sheetName)}</a>`
+      + ` · ${st.cellsUsed.toLocaleString()} of ${st.cellLimit.toLocaleString()} cells in use`;
+  }, () => {});
+}
+$("#csv").onclick = () => {
+  const db = ready(); if (!db) return;
+  const q = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
+  const lines = [["Student name", "Contact number", "Contact", "Date started", "Teacher notes", "Sunday date", "Entry type", "New memorisation", "Revision", "Grade", "Memory mistakes", "Tajweed mistakes", "Prompts", "Reading note", "Juz revised", "Overall completion %", ...JUZ_NAMES.map((_, i) => `Juz ${i + 1} %`)].map(q).join(",")];
+  for (const s of students(db)) {
+    const list = sessionsFor(db, s.id);
+    if (!list.length) lines.push([s.name, s.phone, s.contact, s.startDate, s.notes].map(q).join(","));  // no entries
+    for (const e of list) lines.push([s.name, s.phone, s.contact, s.startDate, s.notes, e.date, e.type || "", e.mem, e.rev, e.grade || "", e.mistakes?.memory ?? "", e.mistakes?.tajweed ?? "", e.mistakes?.prompts ?? "", e.note || "", e.revJuz.map((i) => i + 1).join(" "), e.pct, ...e.juz].map(q).join(","));
+  }
+  notify(download(`hifdh-class-${stamp()}.csv`, "\uFEFF" + lines.join("\r\n"), "text/csv;charset=utf-8"), false, 15000);
+};
+$("#json").onclick = async () => {
+  const d = await busy($("#json"), "Preparing backup…", () => api("exportDatabase"));
+  if (d) notify(download(`hifdh-class-backup-${stamp()}.json`, JSON.stringify(d, null, 1), "application/json"), false, 15000);
+};
+$("#restore").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  let d;
+  try {
+    d = JSON.parse(await f.text());
+    if (!Array.isArray(d.students) || !Array.isArray(d.sessions)) throw 0;
+    const ok = d.students.every((s) => Number.isInteger(s.id) && typeof s.name === "string") && d.sessions.every((x) => Number.isInteger(x.studentId) && DATE_RE.test(x.date));
+    if (!ok) throw 0;
+  } catch { return notify("That file isn't a valid Hifdh Tracker backup.", true); }
+  if (!(await ask(`Replace every record in the Google Sheet with ${d.students.length} students and ${d.sessions.length} entries from this backup?`, { ok: "Replace records", danger: true }))) return;
+  notify("Restoring the backup to the Google Sheet…", false, 60000);
+  // Photos from the offline app can be bigger than one Sheets cell allows: shrink those first.
+  for (const s of d.students) if (s.photo && s.photo.length > PHOTO_MAX) { try { s.photo = await fitPhoto(s.photo); } catch { s.photo = ""; } }
+  const res = await busy(null, "", () => api("restoreDatabase", d));
+  if (!res) return;
+  DB = res.db;
+  for (const k of Object.keys(PHOTOS)) delete PHOTOS[k];
+  refresh();
+  notify(`Backup restored: ${DB.students.length} students and ${DB.sessions.length} entries.${res.droppedPhotos ? ` ${res.droppedPhotos} photo${res.droppedPhotos === 1 ? " was" : "s were"} not valid and ${res.droppedPhotos === 1 ? "was" : "were"} left out.` : ""} <a href="${link("index")}">Open the roster</a>`);
+};
+$("#demo").onclick = async () => {
+  const db = await busy($("#demo"), "Adding demo students…", () => api("addDemoData"));
+  if (db) { DB = db; refresh(); notify(`Demo students added. <a href="${link("index")}">Open the roster</a>`); }
+};
+$("#wipe").onclick = async () => {
+  if (!ready()) return;
+  if (!(await ask("Erase every student and Sunday entry from the Google Sheet? This cannot be undone.", { ok: "Erase everything", danger: true, typeToConfirm: "ERASE" }))) return notify("Nothing was erased.");
+  const db = await busy($("#wipe"), "Erasing…", () => api("wipeDatabase", "ERASE"));
+  if (db) { DB = db; for (const k of Object.keys(PHOTOS)) delete PHOTOS[k]; refresh(); notify("All records erased."); }
+};
+start(refresh);
+</script>
+</body>
+</html>

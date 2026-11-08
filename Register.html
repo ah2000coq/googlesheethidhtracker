@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<?!= include('Styles'); ?>
+</head>
+<body>
+<?!= include('Header'); ?>
+<main class="wrap content">
+<div class="page-head"><h2>Register student</h2><p class="lead">Add a new student to the class. You can record their first Sunday now or later from the Sunday entry page.</p></div>
+<div id="notice" role="status" class="notice" hidden></div>
+<div class="panel">
+<form id="form" novalidate>
+  <label>Name<input name="name" required maxlength="80" autocomplete="off"></label>
+  <label>Student picture <span class="opt">(optional)</span>
+    <div class="photo-picker"><span id="thumb" data-icon="camera"></span>
+      <div><strong id="pname">Take or choose a photo</strong><p>Use your phone camera or photo library</p></div>
+      <input name="photo" type="file" accept="image/*" capture="environment" aria-label="Take or choose student photo">
+    </div></label>
+  <div id="contactSlot"></div>
+  <label>Teacher notes and comments <span class="opt">(optional)</span><textarea name="notes" rows="3" maxlength="2000" placeholder="Parent contact, tajweed focus, anything worth remembering…"></textarea></label>
+  <label>Date started <span class="opt">(first Sunday)</span><input name="date" type="date" required></label>
+  <label>New memorisation <span class="opt">(optional)</span><textarea name="mem" rows="2" maxlength="500" placeholder="Example: Surah Al-Mulk, verses 1–5"></textarea></label>
+  <label>Revision <span class="opt">(optional)</span><textarea name="rev" rows="2" maxlength="500" placeholder="Example: Surah An-Naba and An-Nazi'at"></textarea></label>
+  <div id="juzSlot"></div>
+  <div class="actions"><button type="reset" class="secondary-btn">Clear</button><button class="primary-btn" type="submit">Register student</button></div>
+</form>
+</div>
+
+<p class="foot">Records are saved in the class Google Sheet. Use <a data-nav="backup">Backup</a> to download a copy.</p>
+</main>
+<script>const BOOT = <?!= boot ?>;</script>
+<?!= include('Common'); ?>
+<script>
+// ===== Page: Register student =====
+const form = $("#form");
+form.querySelector("[type=submit]").innerHTML = `${icon("plus")} Register student`;
+$("#contactSlot").outerHTML = contactFields();
+form.date.value = today();
+$("#juzSlot").outerHTML = juzEditor(zeroJuz());
+let readJuz = wireJuzEditor(form);
+let photo = "";
+form.photo.addEventListener("change", async () => {
+  const f = form.photo.files[0]; if (!f) return;
+  try { photo = await photoToDataUrl(f); $("#thumb").innerHTML = `<img src="${photo}" alt="">`; $("#pname").textContent = f.name; }
+  catch (e) { photo = ""; notify(esc(e.message), true); }
+});
+form.addEventListener("reset", () => setTimeout(() => {
+  photo = ""; $("#thumb").innerHTML = icon("camera"); $("#pname").textContent = "Take or choose a photo";
+  form.date.value = today(); readJuz = wireJuzEditor(form);
+}));
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const db = loadDB();
+  if (!db) return notify("Still loading the class records — try again in a moment.", true);
+  const f = Object.fromEntries(new FormData(form));
+  const name = f.name.trim().slice(0, 80);
+  if (db.students.length >= MAX) return notify(`The class is limited to ${MAX} students.`, true);
+  if (!name) return notify("Please enter the student's name.", true), form.name.focus();
+  if (!DATE_RE.test(f.date)) return notify("Please choose the first Sunday date.", true);
+  if (db.students.some((s) => s.name.toLowerCase() === name.toLowerCase())
+    && !(await ask(`A student called ${name} already exists. Register another with the same name?`, { ok: "Register anyway" }))) return;
+  const student = { name, photo, phone: cleanPhone(f.phone), contact: cleanContact(f.contact), startDate: f.date, notes: f.notes.trim().slice(0, 2000) };
+  const mem = f.mem.trim(), rev = f.rev.trim(), juz = readJuz(), revJuz = readRevJuz(form);
+  const entry = mem || rev || revJuz.length || juz.some((v) => v > 0) ? { mem, rev, juz, revJuz } : null;
+  const saved = await busy(form.querySelector("[type=submit]"), "Saving…", () => api("registerStudent", student, entry));
+  if (!saved) return;
+  db.students.push(saved.student);
+  if (saved.session) db.sessions.push(saved.session);
+  if (photo) PHOTOS[saved.student.id] = photo;
+  form.reset();
+  const id = saved.student.id;
+  notify(`${esc(name)} registered. <a href="${link("profile", { id })}">View profile</a> · <a href="${link("progress", { id })}">Add Sunday entry</a>`);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+start(() => {});
+</script>
+</body>
+</html>

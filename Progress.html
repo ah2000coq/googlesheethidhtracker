@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<?!= include('Styles'); ?>
+</head>
+<body>
+<?!= include('Header'); ?>
+<main class="wrap content">
+<div class="page-head capture-head">
+  <div><h2>Hifdh progress <span class="ar-title" lang="ar" dir="rtl">الحفظ الجديد</span></h2>
+  <p class="lead">Record the new memorisation (sabaq) a student recited to you. Type a surah in English, Arabic or by number — for example <kbd>mulk</kbd>, <kbd>الملك</kbd>, <kbd>67</kbd> or <kbd>mulk 1-10</kbd>.</p></div>
+</div>
+<div id="picker" class="picker"></div>
+<div id="notice" role="status" class="notice" hidden></div>
+<div id="main"></div>
+
+<p class="foot">Records are saved in the class Google Sheet. Use <a data-nav="backup">Backup</a> to download a copy.</p>
+</main>
+<script>const BOOT = <?!= boot ?>;</script>
+<?!= include('Common'); ?>
+<?!= include('Quran'); ?>
+<script>
+// ===== Page: Hifdh progress =====
+// ===== Hifdh progress: capture new memorisation =====
+const hifdhEntries = (db, id) => sessionsFor(db, id).filter((e) => e.type === "hifdh" && e.ranges?.length);
+// Where the student left off: the ayah after their latest recorded sabaq in a surah.
+function nextStart(db, id, s) {
+  for (const e of hifdhEntries(db, id)) for (const r of [...e.ranges].reverse()) {
+    if (r.a2 >= SURAH_START[s] && r.a2 <= SURAH_START[s] + sCount(s) - 1) return Math.min(sCount(s), ayahNo(r.a2) + 1);
+  }
+  return 1;
+}
+function continueSuggestion(db, id) {
+  const last = hifdhEntries(db, id)[0]; if (!last) return null;
+  const r = last.ranges.at(-1), len = r.to - r.from + 1;
+  if (r.mode === "ayah" && r.to < sCount(r.s)) { const f = r.to + 1, t = Math.min(sCount(r.s), f + len - 1); return { preset: { mode: "ayah", s: r.s, from: f, to: t }, label: `${sName(r.s)} ${f}–${t}`, last }; }
+  if (r.mode === "ayah" && r.to === sCount(r.s)) {
+    // Surah finished: guess direction from earlier sabaq (many classes go An-Nas → An-Naba, i.e. downwards).
+    const prev = hifdhEntries(db, id).slice(1).flatMap((e) => e.ranges).find((x) => x.mode === "ayah" && x.s !== r.s);
+    const next = prev && prev.s > r.s ? r.s - 1 : r.s + 1;
+    if (next >= 1 && next <= 114) return { preset: { mode: "ayah", s: next, from: 1, to: Math.min(sCount(next), len) }, label: `${sName(next)} 1–${Math.min(sCount(next), len)}`, last };
+  }
+  if (r.mode === "page" && r.to < TOTAL_PAGES) { const f = r.to + 1, t = Math.min(TOTAL_PAGES, f + len - 1); return { preset: { mode: "page", from: f, to: t }, label: f === t ? `Page ${f}` : `Pages ${f}–${t}`, last }; }
+  return { preset: null, label: "", last };
+}
+
+function refresh() {
+  const db = loadDB(), id = param("id");
+  if (!studentPicker(db, id, refresh)) return ($("#main").innerHTML = noStudents());
+  const s = id && findStudent(db, id);
+  if (!s) return ($("#main").innerHTML = `<p class="small-muted">Choose the student who is reciting.</p>`);
+  const sug = continueSuggestion(db, s.id);
+  $("#main").innerHTML = `<form id="form" class="capture" novalidate>
+    <div class="panel wide student-strip">
+      <div class="profile-photo sm">${avatar(s)}</div>
+      <div class="strip-main"><strong>${esc(s.name)}</strong>
+        <span class="small-muted">${s.latestMem ? `Last sabaq ${fmtDate(s.latestMemDate)}: ${esc(s.latestMem)}` : "No sabaq recorded yet"}</span></div>
+      <div class="strip-stat"><strong>${s.pct}%</strong><span>${juzDone(s.juz)} of 30 juz</span></div>
+      ${sug?.preset ? `<button type="button" class="primary-gold cont" id="cont">${icon("right")} Continue: ${esc(sug.label)}</button>` : ""}
+    </div>
+    <div class="capture-grid">
+      <div class="capture-col">
+        <div class="panel wide">
+          <div class="row-2"><label>Date<input name="date" type="date" required value="${today()}"></label></div>
+          <h3 class="block-title">Sabaq recited</h3>
+          <div id="portions"></div>
+          <button type="button" class="secondary-btn add-portion" id="addPortion">${icon("plus")} Add another portion</button>
+        </div>
+        <div class="panel wide">${assessmentBlock()}</div>
+      </div>
+      <div class="capture-col side">
+        <div class="panel wide sticky">
+          <h3 class="block-title">Juz completion</h3>
+          <p class="small-muted" id="autoNote">Updates automatically from the portions you enter.</p>
+          <div id="juzChanges" class="juz-change-list"></div>
+          <details class="juz-details"><summary>Adjust juz percentages</summary>${juzEditor(s.juz, s.revDates)}
+            <button type="button" class="secondary-btn" id="resetAuto" hidden>Back to automatic</button></details>
+          <div class="actions"><a class="secondary-btn" href="${link("profile", { id: s.id })}">Cancel</a><button class="primary-btn" type="submit">${icon("save")} Save hifdh</button></div>
+        </div>
+      </div>
+    </div></form>`;
+
+  const form = $("#form"), readJuz = wireJuzEditor(form), readAssess = wireAssessment(form);
+  let manual = false, list = null;
+  form.querySelectorAll(".je input").forEach((i) => i.addEventListener("input", (e) => { if (e.isTrusted) { manual = true; $("#resetAuto").hidden = false; recalc(); } }));
+  form.querySelectorAll("[data-toggle]").forEach((b) => b.addEventListener("click", () => { manual = true; $("#resetAuto").hidden = false; recalc(); }));
+  $("#resetAuto").onclick = () => { manual = false; $("#resetAuto").hidden = true; recalc(); };
+  form.querySelectorAll("input[name=grade]").forEach((r) => r.addEventListener("change", () => recalc()));
+
+  function recalc() {
+    if (!list) return;
+    const ps = list ? list.all().filter((p) => !p.error) : [];
+    const repeat = form.querySelector("input[name=grade]:checked")?.value === "repeat";
+    if (!manual) {
+      const add = Array(30).fill(0);
+      if (!repeat) for (const p of ps) juzShare(p.a1, p.a2).forEach((v, i) => (add[i] += v));
+      s.juz.forEach((v, i) => { const inp = form[`j${i}`]; inp.value = Math.min(100, Math.round(v + add[i])); });
+      form.querySelector(".je input").dispatchEvent(new Event("input"));
+    }
+    const now = readJuz(), changed = now.map((v, i) => [i, s.juz[i], v]).filter(([, a, b]) => a !== b);
+    $("#autoNote").textContent = manual ? "You've adjusted the percentages by hand." : repeat ? "Graded “Repeat”, so completion isn't increased." : "Updates automatically from the portions you enter.";
+    $("#juzChanges").innerHTML = changed.length ? changed.map(([i, a, b]) => `<div class="jc"><span>Juz ${i + 1}</span><span>${a}% → <strong>${b}%</strong></span></div>`).join("")
+      + `<div class="jc total"><span>Overall</span><span>${overall(s.juz)}% → <strong>${overall(now)}%</strong></span></div>` : `<p class="small-muted">No change yet.</p>`;
+  }
+  list = portionList($("#portions"), $("#addPortion"), ["ayah", "page"], () => recalc(), (surah) => nextStart(db, s.id, surah));
+  if ($("#cont")) $("#cont").onclick = () => { list.first().set(sug.preset); notify(`Filled in ${esc(sug.label)} — adjust the ayahs if needed.`); };
+  recalc();
+  list.first().focus();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const date = form.date.value, portions = list.all();
+    if (!DATE_RE.test(date)) return notify("Choose the date of this reading.", true);
+    const bad = portions.find((p) => p.error);
+    if (bad) return notify(`Portion ${portions.indexOf(bad) + 1}: ${bad.error}.`, true);
+    const a = readAssess(), juz = readJuz();
+    if (!DB.students.some((x) => x.id === s.id)) return notify("This student no longer exists.", true);
+    const ranges = portions.map(({ mode, s: sur, from, to, a1, a2 }) => ({ mode, ...(sur ? { s: sur } : {}), from, to, a1, a2 }));
+    const entry = { studentId: s.id, type: "hifdh", date, mem: portionText(portions).slice(0, 500), rev: "",
+      ranges, juz, revJuz: [], grade: a.grade, mistakes: a.mistakes, note: a.note };
+    const saved = await busy(form.querySelector("[type=submit]"), "Saving…", () => api("addSession", entry));
+    if (!saved) return;
+    DB.sessions.push(saved);
+    refresh();
+    notify(`Hifdh saved for ${esc(s.name)}: ${esc(portionText(portions))}. <a href="${link("murajah", { id: s.id })}">Record murajah</a> · <a href="${link("history", { id: s.id })}">View history</a>`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+start(refresh);
+</script>
+</body>
+</html>

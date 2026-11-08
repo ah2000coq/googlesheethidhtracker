@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<?!= include('Styles'); ?>
+</head>
+<body>
+<?!= include('Header'); ?>
+<main class="wrap content">
+<div class="page-head"><h2>Student profile</h2><p class="lead">See a student's latest progress and notes, edit their details, or remove them.</p></div>
+<div id="picker" class="picker"></div>
+<div id="notice" role="status" class="notice" hidden></div>
+<div id="main"></div>
+
+<p class="foot">Records are saved in the class Google Sheet. Use <a data-nav="backup">Backup</a> to download a copy.</p>
+</main>
+<script>const BOOT = <?!= boot ?>;</script>
+<?!= include('Common'); ?>
+<script>
+// ===== Page: Student profile =====
+let editing = false;
+function refresh() {
+  const db = loadDB(), id = param("id");
+  const hasStudents = studentPicker(db, id, () => { editing = false; refresh(); });
+  const s = id && findStudent(db, id);
+  if (!s) return renderExample(!!hasStudents);
+  editing ? renderEdit(s) : renderView(s);
+}
+function renderView(s) {
+  $("#main").innerHTML = `<div class="panel">
+    <div class="profile-head"><div class="profile-photo">${avatar(s)}</div>
+      <div style="flex:1"><h3 style="margin:0 0 .25rem;font-size:1.4rem">${esc(s.name)}</h3>
+      <p class="small-muted" style="margin:0">${s.count} Sunday ${s.count === 1 ? "entry" : "entries"}${s.count ? ` · last on ${fmtDate(s.latestDate)}` : ""}${s.startDate ? ` · started ${fmtDate(s.startDate)}` : ""}</p>
+      ${s.phone || s.contact ? `<p class="small-muted" style="margin:.25rem 0 0">Contact${s.contact ? ` (${esc(s.contact)})` : ""}: ${telLink(s.phone)}</p>` : ""}</div></div>
+    <div style="margin-top:1.25rem">${juzBlock(s.juz, s.revDates)}</div>
+    <div class="grid-2">
+      <div class="record"><span>Latest memorisation</span><p>${withDate(s.latestMem, s.latestMemDate)}</p></div>
+      <div class="record"><span>Latest revision</span><p>${withDate(s.latestRev, s.latestRevDate)}</p></div></div>
+    <div class="notes-box"><span>Teacher notes and comments</span><p>${esc(s.notes) || "No notes added yet."}</p></div>
+    <div class="btn-row">
+      <a class="primary-btn" href="${link("progress", { id: s.id })}">${icon("book")} Record hifdh</a>
+      <a class="primary-btn" href="${link("murajah", { id: s.id })}">${icon("history")} Record murajah</a>
+      <a class="secondary-btn" href="${link("history", { id: s.id })}">${icon("history")} View history</a>
+      <button class="secondary-btn" id="edit">${icon("pencil")} Edit student</button>
+      <button class="secondary-btn danger-text" id="remove">${icon("trash")} Remove</button></div></div>`;
+  $("#edit").onclick = () => { editing = true; refresh(); };
+  $("#remove").onclick = async () => {
+    if (!(await ask(`Remove ${s.name} and all their Sunday records? This cannot be undone.`, { ok: "Remove", danger: true }))) return;
+    if (!(await busy($("#remove"), "Removing…", () => api("deleteStudent", s.id)))) return;
+    DB.students = DB.students.filter((x) => x.id !== s.id);
+    DB.sessions = DB.sessions.filter((x) => x.studentId !== s.id);
+    delete PHOTOS[s.id];
+    setParam("id", null); chrome(BOOT.page);
+    refresh(); notify(`${esc(s.name)} removed.`);
+  };
+}
+// Read-only sample so the page shows what a filled-in profile looks like. Never saved.
+const EXAMPLE = {
+  name: "Yusuf Ahmed", phone: "+44777799999", contact: "Father", startDate: "2026-08-30", details: "Age 12: +44777799999: Contact Father: Abu Yusuf", photo: "", count: 4, latestDate: "2026-09-20",
+  juz: [...Array(26).fill(0), 15, 40, 100, 100],
+  revDates: [...Array(27).fill(""), "2026-09-06", "2026-09-13", "2026-09-20"],
+  latestMem: "Surah An-Nazi'at, verses 27–46", latestMemDate: "2026-09-20",
+  latestRev: "Surah An-Naba (full) and Al-Fajr to An-Nas", latestRevDate: "2026-09-13",
+  notes: "Strong tajweed. Needs to slow down on madd lengths.\nParents keen on weekly updates.",
+};
+function renderExample(hasStudents) {
+  const s = EXAMPLE;
+  if (DB.settings?.exampleHidden) {
+    $("#main").innerHTML = hasStudents ? `<p class="small-muted">Choose a student above to see their profile.</p>` : noStudents();
+    return;
+  }
+  $("#main").innerHTML = `<p class="small-muted" style="margin:0 0 .75rem">${hasStudents
+      ? "Choose a student above to see their profile. Here's an example of what it shows:"
+      : "An Entry for Yusuf Ahmed: Age 12: +44777799999: Contact Father: Abu Yusuf"}</p>
+    <div class="panel example" aria-label="Example student profile">
+    <span class="example-tag">Example</span>
+    <div class="profile-head"><div class="profile-photo">${avatar(s)}</div>
+      <div style="flex:1"><h3 style="margin:0 0 .25rem;font-size:1.4rem">${esc(s.name)}</h3>
+      <p class="small-muted" style="margin:0">${s.count} Sunday entries · last on ${fmtDate(s.latestDate)}</p></div></div>
+    <div style="margin-top:1.25rem">${juzBlock(s.juz, s.revDates)}</div>
+    <div class="grid-2">
+      <div class="record"><span>Latest memorisation</span><p>${withDate(s.latestMem, s.latestMemDate)}</p></div>
+      <div class="record"><span>Latest revision</span><p>${withDate(s.latestRev, s.latestRevDate)}</p></div></div>
+    <div class="notes-box"><span>Teacher notes and comments</span><p>${esc(s.notes)}</p></div>
+    <div class="btn-row">
+      <a class="primary-btn" href="${link("register")}">${icon("plus")} Register Student</a>
+      <button type="button" class="secondary-btn" id="exportExample">${icon("download")} Export Student Data</button>
+      <button type="button" class="danger-btn" id="archiveExample">${icon("x")} Archive Student</button>
+    </div></div>`;
+  $("#exportExample").onclick = () => notify(exportStudentCsv(s), false, 15000);
+  $("#archiveExample").onclick = async () => {
+    if (!(await ask("Archive this example student? It will no longer be shown.", { ok: "Archive" }))) return;
+    if (!(await busy($("#archiveExample"), "Archiving…", () => api("setSetting", "exampleHidden", true)))) return;
+    DB.settings = { ...DB.settings, exampleHidden: true };
+    refresh(); notify("Example student archived.");
+  };
+}
+// One student's data as a CSV: details, latest activity, then a row per juz. Returns the notice to show.
+function exportStudentCsv(s) {
+  const q = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`, row = (...c) => c.map(q).join(",");
+  const lines = [
+    row("Student", s.name), row("Details", s.details || ""), row("Contact number", s.phone || ""), row("Contact", s.contact || ""), row("Date started", s.startDate || ""), row("Sunday entries", s.count),
+    row("Last entry", s.latestDate), row("Overall completion %", overall(s.juz)), row("Juz complete", `${juzDone(s.juz)} of 30`),
+    row("Latest memorisation", s.latestMem, s.latestMemDate), row("Latest revision", s.latestRev, s.latestRevDate),
+    row("Teacher notes", s.notes), "",
+    row("Juz", "Name", "Memorised %", "Last revised"),
+    ...s.juz.map((v, i) => row(i + 1, JUZ_NAMES[i], v, s.revDates?.[i] || "")),
+  ];
+  return download(`student-${s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${today()}.csv`, "\uFEFF" + lines.join("\r\n"), "text/csv;charset=utf-8");
+}
+function renderEdit(s) {
+  let photo = PHOTOS[s.id] || "", photoChanged = false;
+  $("#main").innerHTML = `<div class="panel"><form id="form" novalidate>
+    <label>Name<input name="name" required maxlength="80" value="${esc(s.name)}"></label>
+    <label>Student picture <span class="opt">(optional)</span>
+      <div class="photo-picker"><span id="thumb">${photo ? `<img src="${esc(photo)}" alt="">` : icon("camera")}</span>
+        <div><strong id="pname">${photo || s.hasPhoto ? "Current photo saved" : "Take or choose a photo"}</strong><p>Choose a new photo to replace it</p></div>
+        <input name="photo" type="file" accept="image/*" capture="environment" aria-label="Take or choose student photo"></div></label>
+    ${photo || s.hasPhoto ? `<button type="button" class="secondary-btn" id="rmPhoto" style="justify-self:start">${icon("trash")} Remove photo</button>` : ""}
+    ${contactFields(s)}
+    <label>Date started<input name="startDate" type="date" value="${esc(s.startDate)}"></label>
+    <label>Teacher notes and comments<textarea name="notes" rows="4" maxlength="2000">${esc(s.notes)}</textarea></label>
+    <div class="actions"><button type="button" class="secondary-btn" id="cancel">Cancel</button><button class="primary-btn" type="submit">Save changes</button></div>
+  </form></div>`;
+  const form = $("#form");
+  form.photo.addEventListener("change", async () => {
+    const f = form.photo.files[0]; if (!f) return;
+    try { photo = await photoToDataUrl(f); photoChanged = true; $("#thumb").innerHTML = `<img src="${photo}" alt="">`; $("#pname").textContent = f.name; }
+    catch (e) { notify(esc(e.message), true); }
+  });
+  const rm = $("#rmPhoto"); if (rm) rm.onclick = () => { photo = ""; photoChanged = true; $("#thumb").innerHTML = icon("camera"); $("#pname").textContent = "Photo will be removed"; rm.remove(); };
+  $("#cancel").onclick = () => { editing = false; refresh(); };
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = form.name.value.trim().slice(0, 80);
+    if (!name) return notify("Name is required.", true);
+    const rec = DB.students.find((x) => x.id === s.id);
+    if (!rec) return notify("This student no longer exists.", true);
+    const changes = { id: s.id, name, phone: cleanPhone(form.phone.value), contact: cleanContact(form.contact.value),
+      startDate: DATE_RE.test(form.startDate.value) ? form.startDate.value : rec.startDate, notes: form.notes.value.trim().slice(0, 2000) };
+    if (photoChanged) changes.photo = photo;   // left out = keep the photo already in the Sheet
+    const saved = await busy(form.querySelector("[type=submit]"), "Saving…", () => api("updateStudent", changes));
+    if (!saved) return;
+    DB.students[DB.students.indexOf(rec)] = saved;
+    if (photoChanged) { if (photo) PHOTOS[s.id] = photo; else delete PHOTOS[s.id]; }
+    editing = false; refresh(); notify("Student details updated.");
+  });
+  form.name.focus();
+}
+start(refresh);
+</script>
+</body>
+</html>
