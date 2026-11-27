@@ -121,9 +121,11 @@ function renderEdit(s) {
     ${contactFields(s)}
     <label>Date started<input name="startDate" type="date" value="${esc(s.startDate)}"></label>
     <label>Teacher notes and comments<textarea name="notes" rows="4" maxlength="2000">${esc(s.notes)}</textarea></label>
+    ${juzEditor(s.juz, s.revDates)}
     <div class="actions"><button type="button" class="secondary-btn" id="cancel">Cancel</button><button class="primary-btn" type="submit">Save changes</button></div>
   </form></div>`;
   const form = $("#form");
+  const readJuz = wireJuzEditor(form);
   form.photo.addEventListener("change", async () => {
     const f = form.photo.files[0]; if (!f) return;
     try { photo = await photoToDataUrl(f); photoChanged = true; $("#thumb").innerHTML = `<img src="${photo}" alt="">`; $("#pname").textContent = f.name; }
@@ -140,13 +142,26 @@ function renderEdit(s) {
     const changes = { id: s.id, name, phone: cleanPhone(form.phone.value), contact: cleanContact(form.contact.value),
       startDate: DATE_RE.test(form.startDate.value) ? form.startDate.value : rec.startDate, notes: form.notes.value.trim().slice(0, 2000) };
     if (photoChanged) changes.photo = photo;   // left out = keep the photo already in the Sheet
-    const saved = await busy(form.querySelector("[type=submit]"), "Saving…", () => api("updateStudent", changes));
+    const progress = juzProgress(s, readJuz(), readRevJuz(form));   // null = no juz entry to record
+    const saved = await busy(form.querySelector("[type=submit]"), "Saving…", () => api("updateStudent", changes, progress));
     if (!saved) return;
-    DB.students[DB.students.indexOf(rec)] = saved;
+    DB.students[DB.students.indexOf(rec)] = saved.student;
+    if (saved.session) DB.sessions.push(saved.session);
     if (photoChanged) { if (photo) PHOTOS[s.id] = photo; else delete PHOTOS[s.id]; }
-    editing = false; refresh(); notify("Student details updated.");
+    editing = false; refresh(); notify(saved.session ? "Student details and juz progress updated." : "Student details updated.");
   });
   form.name.focus();
+}
+// Decides whether the juz editor on the edit form should be saved as a new progress entry.
+// s = the student as shown (s.juz = current snapshot, s.latestDate = newest entry's date or ""),
+// juz = the 30 values now in the editor, revJuz = indexes (0–29) of the juz ticked "Revised".
+// Return null to record nothing, or { date: "YYYY-MM-DD", juz, revJuz } to add an entry.
+function juzProgress(s, juz, revJuz) {
+  const changed = juz.some((v, i) => v !== s.juz[i]);
+  if (!changed && !revJuz.length) return null;   // e.g. only the phone number was edited: no empty History row
+  // Today, or the newest entry's date if that is later, so this snapshot becomes the student's current one.
+  const date = s.latestDate > today() ? s.latestDate : today();
+  return { date, juz, revJuz };
 }
 start(refresh);
 </script>

@@ -527,8 +527,14 @@ function registerStudent(input, firstEntry) {
   });
 }
 
-/** Updates a student's details. `photo`: leave it out to keep the current photo, "" to remove it, or a data URL to replace it. */
-function updateStudent(input) {
+/**
+ * Updates a student's details. `photo`: leave it out to keep the current photo, "" to remove it, or a data URL to replace it.
+ * `progress` (optional) = { date, juz: [30 numbers], revJuz: [juz indexes] } from the profile's juz editor. It is saved as a
+ * new entry with no memorisation / revision text, like the first entry made at registration, so History keeps the
+ * earlier snapshot and the change can be undone by deleting that entry.
+ * Returns { student, session } — session is null when no progress was sent.
+ */
+function updateStudent(input, progress) {
   input = input || {};
   const id = intIn_(input.id, 1, 1e12);
   if (id === null) throw new Error('Unknown student.');
@@ -537,6 +543,13 @@ function updateStudent(input) {
   const patch = { name: s.name, phone: s.phone, contact: s.contact, notes: s.notes, updatedAt: new Date().toISOString() };
   if (s.startDate) patch.startDate = s.startDate;
   if (input.photo !== undefined) patch.photo = cleanPhoto_(input.photo);
+  let entry = null;
+  if (progress) {
+    // Without a juz array cleanSession_ would fall back to juzFromPct_(undefined) — all zeros — and wipe the student's progress.
+    if (!Array.isArray(progress.juz) || progress.juz.length !== 30) throw new Error('The juz progress could not be read. Please try again.');
+    entry = cleanSession_({ studentId: id, type: '', date: progress.date, juz: progress.juz, revJuz: progress.revJuz });
+    if (!entry.date) entry.date = today_();
+  }
 
   return withLock_(() => {
     const row = findRow_('students', id);
@@ -546,7 +559,12 @@ function updateStudent(input) {
     const values = t.sheet.getRange(row, 1, 1, t.width).getValues()[0];
     const rec = {};
     t.def.fields.forEach((f) => { rec[f.key] = fromCell_(values[t.col[f.key]], f.type); });
-    return studentOut_(rec, false);
+    let session = null;
+    if (entry) {
+      session = sessionRow_(Object.assign({}, entry, { id: allocateIds_(1)[0], createdAt: new Date().toISOString() }));
+      appendRows_('sessions', [session]);
+    }
+    return { student: studentOut_(rec, false), session: session ? sessionOut_(session) : null };
   });
 }
 
