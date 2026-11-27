@@ -1,0 +1,297 @@
+<script>
+// ===== Common.html: shared client code (included in every page) =====
+// Runs in the visitor's browser, inside Apps Script's sandboxed iframe. Nothing is kept in browser
+// storage: the records live in the class Google Sheet and are read and written by Code.js
+// through google.script.run. BOOT (printed by doGet) carries the web app URL and the URL parameters,
+// which the iframe cannot read from location.search.
+const MAX = BOOT.maxStudents, PER_PAGE = 12, PHOTO_MAX = BOOT.photoMax;
+
+const ICONS = {
+  book:'<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  calendar:'<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  alert:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+  left:'<path d="m15 18-6-6 6-6"/>', right:'<path d="m9 18 6-6-6-6"/>',
+  camera:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+  history:'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  pencil:'<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+  trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  user:'<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  grid:'<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  save:'<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
+};
+const icon = (n) => `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const initials = (n) => n.split(/\s+/).filter(Boolean).map((x) => x[0]).join("").slice(0, 2).toUpperCase();
+const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const clamp = (v) => Math.max(0, Math.min(100, Math.round(Number(v)) || 0));
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// ---------- data: the Google Sheet, through Code.js ----------
+let DB = null;        // what this page loaded: { students, sessions, settings }; kept in step with each save
+const PHOTOS = {};    // student id -> photo data URL (loaded after the page shows; photos are large)
+const loadDB = () => DB;
+
+// google.script.run as a Promise:  api("addSession", entry).then(saved => …)
+function api(fn, ...args) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler((e) => reject(e instanceof Error ? e : new Error(String(e?.message || e || "Request failed"))))[fn](...args);
+  });
+}
+
+// Loads the class from the Sheet, then draws the page with render().
+function start(render) {
+  chrome(BOOT.page);
+  const wait = document.createElement("div");
+  wait.className = "loading"; wait.setAttribute("role", "status");
+  wait.innerHTML = `<span class="spinner" aria-hidden="true"></span><span>Loading class records from Google Sheets…</span>`;
+  $("#notice").after(wait);
+  api("loadDatabase").then((db) => { DB = db; wait.remove(); render(); loadPhotos(); }, (e) => {
+    wait.className = "notice error";
+    wait.innerHTML = `${icon("alert")}<span>Could not load the class records: ${esc(e.message)} <button type="button" class="link-btn" onclick="go(BOOT.page, BOOT.params)">Try again</button></span>`;
+  });
+}
+function loadPhotos() {
+  if (!DB.students.some((s) => s.hasPhoto)) return;
+  api("getPhotos").then((map) => { Object.assign(PHOTOS, map); paintPhotos(); }, () => {});
+}
+// Swap initials for photos in place, so a form someone is filling in isn't redrawn.
+function paintPhotos() {
+  document.querySelectorAll("[data-av]").forEach((el) => { const p = PHOTOS[el.dataset.av]; if (p) el.outerHTML = `<img src="${esc(p)}" alt="">`; });
+}
+
+// Runs a save: disables the button meanwhile, shows any error. Resolves to the result, or undefined on failure.
+async function busy(btn, label, work) {
+  const html = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.textContent = label; }
+  try { return await work(); }
+  catch (e) { notify(esc(e?.message || String(e)), true); return undefined; }
+  finally { if (btn?.isConnected) { btn.disabled = false; btn.innerHTML = html; } }
+}
+
+// ---------- navigation: every page is the web app URL + ?page=… (links open in the top window) ----------
+function pageUrl(page, params = {}) {
+  const q = new URLSearchParams({ page });
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") q.set(k, v);
+  return `${BOOT.baseUrl}?${q}`;
+}
+const link = (page, params) => esc(pageUrl(page, params));
+const go = (page, params) => window.open(pageUrl(page, params), "_top");
+const param = (k) => BOOT.params[k] ?? null;
+// Changes a URL parameter without reloading (updates the address bar of the top window).
+function setParam(k, v) {
+  if (v === null || v === undefined || v === "") delete BOOT.params[k]; else BOOT.params[k] = String(v);
+  try { google.script.history.replace(null, { ...BOOT.params, page: BOOT.page }); } catch {}
+}
+
+// ---------- 30 juz ----------
+const JUZ_NAMES = ["Alif Lam Mim","Sayaqul","Tilka ar-Rusul","Lan Tanalu","Wal-Muhsanat","La Yuhibbullah","Wa Idha Sami'u",
+  "Wa Law Annana","Qal al-Mala'","Wa'lamu","Ya'tadhirun","Wa Ma Min Dabbah","Wa Ma Ubarri'u","Rubama","Subhanalladhi",
+  "Qal Alam","Iqtaraba","Qad Aflaha","Wa Qalalladhina","Amman Khalaq","Utlu Ma Uhiya","Wa Man Yaqnut","Wa Mali",
+  "Fa Man Azlam","Ilayhi Yuradd","Ha Mim","Qala Fa Ma Khatbukum","Qad Sami'allah","Tabarakalladhi","'Amma"];
+const zeroJuz = () => Array(30).fill(0);
+const overall = (j) => Math.round(j.reduce((t, v) => t + v, 0) / 30);
+const juzDone = (j) => j.filter((v) => v >= 100).length;
+
+// Student with derived "latest" fields from their most recent session by date.
+function sessionsFor(db, id) {
+  return db.sessions.filter((e) => e.studentId === id).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+}
+function view(db, s) {
+  const list = sessionsFor(db, s.id), l = list[0];
+  const m = list.find((e) => e.mem), r = list.find((e) => e.rev);   // most recent entry that has each activity
+  const juz = l?.juz || zeroJuz();
+  const revDates = Array.from({ length: 30 }, (_, i) => list.find((e) => e.revJuz?.includes(i))?.date || "");
+  const startDate = s.startDate || list.at(-1)?.date || (s.createdAt || "").slice(0, 10);
+  return { ...s, phone: s.phone || "", contact: s.contact || "", startDate, count: list.length, latestDate: l?.date || "", juz, revDates, pct: overall(juz),
+    latestMem: m?.mem || "", latestMemDate: m?.date || "", latestRev: r?.rev || "", latestRevDate: r?.date || "" };
+}
+function students(db) {
+  return db.students.map((s) => view(db, s)).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
+function findStudent(db, id) { const s = db.students.find((x) => x.id === Number(id)); return s ? view(db, s) : null; }
+
+// ---------- photos: resized in the browser to a JPEG data URL small enough for one Sheets cell ----------
+const photoOf = (s) => (s.id && PHOTOS[s.id]) || s.photo || "";
+const avatar = (s) => { const p = photoOf(s); return p ? `<img src="${esc(p)}" alt="">` : `<span ${s.id && s.hasPhoto ? `data-av="${s.id}"` : ""}>${esc(initials(s.name))}</span>`; };
+async function photoToDataUrl(file) {
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(file.type) && file.type) throw new Error("Use a JPEG, PNG or WebP photo.");
+  if (file.size > 15 * 1024 * 1024) throw new Error("That photo is too large.");
+  const url = URL.createObjectURL(file);
+  try { return await fitPhoto(url); } finally { URL.revokeObjectURL(url); }
+}
+async function fitPhoto(src) {
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Could not read that photo.")); i.src = src; });
+  const c = document.createElement("canvas");
+  for (const max of [320, 256, 200, 160, 120]) for (const q of [0.8, 0.65, 0.5]) {
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const d = c.toDataURL("image/jpeg", q);
+    if (d.length <= PHOTO_MAX) return d;
+  }
+  throw new Error("Could not make that photo small enough to store.");
+}
+
+// ---------- UI chrome ----------
+const PAGES = [
+  ["index", "Roster", "grid"], ["register", "Register student", "plus"],
+  ["profile", "Student profile", "user"], ["progress", "Hifdh progress", "book"], ["murajah", "Murajah progress", "history"],
+  ["history", "History", "calendar"], ["backup", "Backup", "save"],
+];
+function chrome(active) {
+  document.querySelectorAll("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
+  document.querySelectorAll("[data-nav]").forEach((a) => (a.href = pageUrl(a.dataset.nav)));
+  const id = param("id");
+  $("#nav").innerHTML = PAGES.map(([p, label, ic]) => {
+    const params = id && ["profile", "progress", "murajah", "history"].includes(p) ? { id } : {};
+    return `<a href="${link(p, params)}" ${p === active ? 'aria-current="page"' : ""}>${icon(ic)}${label}</a>`;
+  }).join("");
+  $("#nav [aria-current]")?.scrollIntoView({ block: "nearest", inline: "center" });
+}
+function notify(msg, isError = false, ms = 6000) {
+  const n = $("#notice");
+  n.hidden = false; n.className = "notice" + (isError ? " error" : "");
+  n.innerHTML = icon(isError ? "alert" : "check") + `<span>${msg}</span>`;
+  clearTimeout(notify.t); if (!isError) notify.t = setTimeout(() => (n.hidden = true), ms);
+}
+
+// In-page dialogs (the web app's iframe can't rely on alert / confirm / prompt).
+function dialog(inner, wide = false) {
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.innerHTML = `<div class="modal dialog ${wide ? "wide" : ""}" role="dialog" aria-modal="true">${inner}</div>`;
+  document.body.append(bg);
+  return bg;
+}
+// await ask("Delete this entry?", { ok: "Delete", danger: true })  → true / false
+function ask(message, { ok = "OK", cancel = "Cancel", danger = false, typeToConfirm = "" } = {}) {
+  return new Promise((resolve) => {
+    const bg = dialog(`<p class="dialog-msg">${esc(message)}</p>
+      ${typeToConfirm ? `<label class="dialog-type">Type <strong>${esc(typeToConfirm)}</strong> to confirm<input data-type autocomplete="off" autocapitalize="characters"></label>` : ""}
+      <div class="actions"><button type="button" class="secondary-btn" data-r="0">${esc(cancel)}</button>
+        <button type="button" class="${danger ? "danger-btn" : "primary-btn"}" data-r="1">${esc(ok)}</button></div>`);
+    const typed = $("[data-type]", bg);
+    const done = (v) => { bg.remove(); document.removeEventListener("keydown", onKey); resolve(v); };
+    const confirmNow = () => { if (typed && typed.value.trim() !== typeToConfirm) { typed.focus(); typed.select(); return; } done(true); };
+    const onKey = (e) => { if (e.key === "Escape") done(false); else if (e.key === "Enter" && typed && document.activeElement === typed) confirmNow(); };
+    bg.addEventListener("click", (e) => { const b = e.target.closest("[data-r]"); if (b) b.dataset.r === "1" ? confirmNow() : done(false); else if (e.target === bg) done(false); });
+    document.addEventListener("keydown", onKey);
+    (typed || $("[data-r='1']", bg)).focus();
+  });
+}
+
+// Downloads a file. Returns notice HTML with a fallback that shows the text, in case the browser blocks downloads from the iframe.
+let lastFile = null;
+function download(name, text, type) {
+  lastFile = { name, text };
+  try {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.target = "_self";
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  } catch {}
+  return `${esc(name)} downloaded. <button type="button" class="link-btn" data-show-file>Didn't download? Show the contents</button>`;
+}
+function showFile({ name, text }) {
+  const bg = dialog(`<div class="modal-head"><div><p>Copy this text and save it as</p><h2>${esc(name)}</h2></div></div>
+    <textarea class="file-text" readonly>${esc(text.replace(/^\uFEFF/, ""))}</textarea>
+    <div class="actions"><button type="button" class="secondary-btn" data-close>Close</button><button type="button" class="primary-btn" data-copy>Copy</button></div>`, true);
+  const ta = $("textarea", bg);
+  bg.addEventListener("click", (e) => {
+    if (e.target.closest("[data-close]") || e.target === bg) bg.remove();
+    if (e.target.closest("[data-copy]")) { ta.select(); let ok = false; try { ok = document.execCommand("copy"); } catch {} e.target.closest("[data-copy]").textContent = ok ? "Copied" : "Press Ctrl+C to copy"; }
+  });
+  ta.focus(); ta.select();
+}
+document.addEventListener("click", (e) => { if (e.target.closest("[data-show-file]") && lastFile) showFile(lastFile); });
+
+// Student <select> used by profile / progress / murajah / history pages.
+function studentPicker(db, selectedId, onPick) {
+  const el = $("#picker"); const list = students(db);
+  if (!list.length) { el.innerHTML = ""; return null; }
+  el.innerHTML = `<label>Student<select id="pickSel"><option value="">Choose a student…</option>${
+    list.map((s) => `<option value="${s.id}" ${s.id === Number(selectedId) ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>`;
+  $("#pickSel").addEventListener("change", (e) => {
+    setParam("id", e.target.value); chrome(BOOT.page); onPick(e.target.value);
+  });
+  return list;
+}
+
+// "Load demo students" on any empty page: four sample students with a few weeks of history (created by Code.js).
+const noStudents = () => `<div class="empty">${icon("users")}<h3>No students registered yet</h3>
+  <p>Register your first student, or load four demo students to try every page.</p>
+  <div class="btn-row" style="justify-content:center;margin-top:.5rem">
+    <a class="primary-btn" href="${link("register")}">${icon("plus")} Register student</a>
+    <button type="button" class="secondary-btn" data-demo>${icon("users")} Load demo students</button></div></div>`;
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-demo]"); if (!b) return;
+  const db = await busy(b, "Adding demo students…", () => api("addDemoData"));
+  if (!db) return;
+  DB = db;
+  const first = [...students(DB)].sort((a, b) => b.count - a.count)[0];
+  if (first && document.querySelector("#picker") && !param("id")) { setParam("id", first.id); chrome(BOOT.page); }
+  if (typeof refresh === "function") refresh();
+  notify(`Demo students loaded${first ? ` — showing ${esc(first.name)}. Use the Student list to switch.` : "."}`);
+});
+
+const revTip = (i, d) => `Juz ${i + 1} · ${d ? `Last revised ${fmtDate(d)}` : "Not revised yet"}`;
+// Overall summary line + 30 bars, one per juz. Tooltip (hover, keyboard focus or tap) = last revised date.
+function juzBlock(juz, revDates = []) {
+  const done = juzDone(juz);
+  return `<div class="bar-label"><span>Quran memorisation completed</span><span>${overall(juz)}% · ${done} of 30 juz</span></div>
+  <div class="juz-grid">${juz.map((v, i) => `
+    <div class="juz-row ${v >= 100 ? "full" : ""}" tabindex="0" data-tip="${revTip(i, revDates[i])}" aria-label="Juz ${i + 1}: ${v}% memorised. ${revTip(i, revDates[i])}">
+      <span class="jn">Juz ${i + 1}</span><div class="jb"><div style="width:${v}%"></div></div><span class="jp">${v}%</span></div>`).join("")}</div>`;
+}
+// Compact 30-segment strip (roster cards).
+const juzStrip = (juz) => `<div class="juz-strip" aria-hidden="true">${juz.map((v) => `<i><b style="height:${v}%"></b></i>`).join("")}</div>`;
+// Form editor: one input per juz, prefilled with the last entry.
+function juzEditor(juz, revDates = []) {
+  return `<fieldset class="juz-edit"><legend>Memorisation completed per juz <span class="opt">(%, tap a juz name to toggle 0 / 100; tick the juz revised today)</span></legend>
+    <div class="juz-edit-grid">${juz.map((v, i) => `
+      <label class="je"><button type="button" class="je-name" data-toggle="${i}" title="${revTip(i, revDates[i])}">Juz ${i + 1}<small>${JUZ_NAMES[i]}</small></button>
+        <input type="number" name="j${i}" min="0" max="100" step="5" value="${v}" inputmode="numeric" aria-label="Juz ${i + 1} percent">
+        <div class="jb"><div style="width:${v}%"></div></div>
+        <span class="je-rev"><input type="checkbox" name="r${i}" aria-label="Juz ${i + 1} revised today"> Revised<em>${revDates[i] ? fmtDate(revDates[i]) : "never"}</em></span></label>`).join("")}</div>
+    <p class="small-muted" id="juzTotal">Overall ${overall(juz)}% · ${juzDone(juz)} of 30 juz complete</p></fieldset>`;
+}
+function wireJuzEditor(form) {
+  const read = () => Array.from({ length: 30 }, (_, i) => clamp(form[`j${i}`].value));
+  const update = () => {
+    const j = read();
+    form.querySelectorAll(".je").forEach((el, i) => { el.querySelector(".jb div").style.width = j[i] + "%"; el.classList.toggle("full", j[i] >= 100); });
+    $("#juzTotal", form).textContent = `Overall ${overall(j)}% · ${juzDone(j)} of 30 juz complete`;
+  };
+  form.querySelectorAll(".je input").forEach((inp) => {
+    inp.addEventListener("input", update);
+    inp.addEventListener("change", () => { inp.value = clamp(inp.value); update(); });
+  });
+  form.querySelectorAll("[data-toggle]").forEach((b) => (b.onclick = () => {
+    const inp = form[`j${b.dataset.toggle}`]; inp.value = Number(inp.value) >= 100 ? 0 : 100; update();
+  }));
+  update();
+  return read;
+}
+const readRevJuz = (form) => Array.from({ length: 30 }, (_, i) => i).filter((i) => form[`r${i}`].checked);
+const CONTACTS = ["Father", "Mother", "Self"];
+const cleanPhone = (v) => String(v ?? "").replace(/[^\d+ ()-]/g, "").trim().slice(0, 20);
+const cleanContact = (v) => (CONTACTS.includes(v) ? v : "");
+const telLink = (p) => p ? `<a href="tel:${esc(p.replace(/[^\d+]/g, ""))}">${esc(p)}</a>` : "—";
+// Contact number / who to contact / date started — shared by Register and Edit forms.
+const contactFields = (s = {}) => `<div class="field-row">
+  <label>Contact number <span class="opt">(optional)</span><input name="phone" type="tel" inputmode="tel" maxlength="20" placeholder="+44 7700 900123" value="${esc(s.phone)}"></label>
+  <label>Contact <span class="opt">(who to call)</span><select name="contact"><option value="">Not set</option>${
+    CONTACTS.map((c) => `<option ${s.contact === c ? "selected" : ""}>${c}</option>`).join("")}</select></label></div>`;
+const withDate = (text, date) => text ? `${esc(text)}<small class="rec-date">${fmtDate(date)}</small>` : "No entry yet";
+</script>

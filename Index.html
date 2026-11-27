@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<?!= include('Styles'); ?>
+</head>
+<body>
+<?!= include('Header'); ?>
+<main class="wrap content">
+<div class="overview roster-top">
+  <div><p class="muted-label">Class overview</p><h2>Student progress</h2></div>
+  <div class="roster-tools">
+    <div class="stat"><span data-icon="users"></span><strong id="count">0</strong><span>of 100</span></div>
+    <div class="searchbar"><span data-icon="search"></span><input id="search" aria-label="Search students" placeholder="Search by student name or contact number…" autocomplete="off"></div>
+  </div>
+</div>
+<div id="notice" role="status" class="notice" hidden></div>
+<section class="table-card" aria-labelledby="tblTitle">
+  <div class="table-card-head"><div><h3 id="tblTitle">Class register</h3><p id="tblSub"></p></div><span id="tblTag"></span></div>
+  <div class="table-scroll"><table class="student-table">
+    <thead><tr><th scope="col">Name</th><th scope="col">Contact number</th><th scope="col">Contact</th><th scope="col">Date started</th><th scope="col">Hifdh %</th></tr></thead>
+    <tbody id="tbody"></tbody></table></div>
+</section>
+<div id="pager" class="pager" hidden style="margin:-0.5rem 0 1.5rem"></div>
+<h3 class="section-title" id="cardsTitle">Memorisation by juz</h3>
+<div id="roster"></div>
+
+<p class="foot">Records are saved in the class Google Sheet. Use <a data-nav="backup">Backup</a> to download a copy.</p>
+</main>
+<script>const BOOT = <?!= boot ?>;</script>
+<?!= include('Common'); ?>
+<script>
+// ===== Page: Roster =====
+let query = "", page = 1;
+// Sample rows shown until real students are registered (numbers in Ofcom's drama range, apart from Yusuf's).
+const EXAMPLE_ROWS = [
+  ["Yusuf Ahmed", "+44777799999", "Father", "2026-08-30", 9],
+  ["Musa Khan", "+44 7700 900214", "Mother", "2026-08-30", 14],
+  ["Ibrahim Siddiqui", "+44 7700 900358", "Father", "2026-09-06", 3],
+  ["Ayaan Rahman", "+44 7700 900471", "Mother", "2026-09-06", 0],
+  ["Zakariya Ali", "+44 7700 900532", "Mother", "2026-09-06", 7],
+  ["Hamza Hussain", "+44 7700 900619", "Father", "2026-09-13", 23],
+  ["Faisal Mahmood", "+44 7700 900705", "Mother", "2026-09-13", 41],
+  ["Bilal Chaudhry", "+44 7700 900846", "Self", "2026-09-13", 68],
+  ["Sulaiman Malik", "+44 7700 900927", "Mother", "2026-09-20", 5],
+  ["Umar Farooq", "+44 7700 900163", "Father", "2026-09-20", 17],
+  ["Khalid Noor", "+44 7700 900288", "Self", "2026-09-27", 100],
+  ["Idris Rahman", "+44 7700 900394", "Father", "2026-09-27", 2],
+];
+const EXAMPLE_COUNT = 17;   // shown in the "of 100" counter while the example register is displayed
+const hifdhCell = (p) => `<div class="hifdh"><span>${p}%</span><div class="jb"><div style="width:${p}%"></div></div></div>`;
+const relPill = (c) => c ? `<span class="rel ${esc(c)}">${esc(c)}</span>` : "—";
+const miniAv = (s) => `<span class="mini-av">${avatar(s)}</span>`;
+function refresh() {
+  const db = loadDB(); if (!db) return;
+  const all = students(db);
+  $("#count").textContent = all.length || EXAMPLE_COUNT;
+  const q = query.toLowerCase().trim(), digits = q.replace(/\D/g, "");
+  const match = (name, phone) => name.toLowerCase().includes(q) || (digits && phone.replace(/\D/g, "").includes(digits));
+
+  // --- table: real students 12 per page, or the example register when the class is empty ---
+  const example = !all.length;
+  const rows = example ? EXAMPLE_ROWS.map(([name, phone, contact, startDate, pct]) => ({ name, phone, contact, startDate, pct })) : all;
+  const filtered = rows.filter((s) => match(s.name, s.phone || ""));
+  const pages = Math.max(1, Math.ceil(filtered.length / PER_PAGE)); page = Math.min(page, pages);
+  const shown = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  $("#tblTag").innerHTML = example ? `<span class="example-tag" style="position:static">Example</span>` : "";
+  $("#tblSub").textContent = example ? "Sample rows — register a student to start your own list."
+    : `${filtered.length} student${filtered.length === 1 ? "" : "s"}${q ? " matching" : ""} · tap a row to open the profile`;
+  $("#tbody").innerHTML = shown.length ? shown.map((s) => `
+    <tr ${example ? "" : `class="link" data-id="${s.id}"`}>
+      <td><div class="who">${miniAv(s)}${example ? esc(s.name) : `<a href="${link("profile", { id: s.id })}">${esc(s.name)}</a>`}</div></td>
+      <td>${telLink(s.phone)}</td><td>${relPill(s.contact)}</td><td>${s.startDate ? fmtDate(s.startDate) : "—"}</td><td>${hifdhCell(s.pct)}</td></tr>`).join("")
+    : `<tr><td colspan="5" class="center-muted">No students match “${esc(query)}”.</td></tr>`;
+  document.querySelectorAll("tr.link").forEach((tr) => (tr.onclick = (e) => { if (!e.target.closest("a")) go("profile", { id: tr.dataset.id }); }));
+
+  const pager = $("#pager"); pager.hidden = pages <= 1;
+  pager.innerHTML = `<button class="page-btn" id="prev" ${page === 1 ? "disabled" : ""} aria-label="Previous page">${icon("left")}</button>
+    <span>Page ${page} of ${pages}</span><button class="page-btn" id="next" ${page === pages ? "disabled" : ""} aria-label="Next page">${icon("right")}</button>`;
+  $("#prev").onclick = () => { page--; refresh(); }; $("#next").onclick = () => { page++; refresh(); };
+
+  // --- cards: same page of students, showing juz progress ---
+  $("#cardsTitle").hidden = example;
+  if (example) $("#roster").innerHTML = `<a class="primary-btn" style="display:inline-flex" href="${link("register")}">${icon("plus")} Register student</a>`;
+  else $("#roster").innerHTML = shown.length ? `<div class="student-roster">${shown.map((s) => `
+    <a class="roster-card" href="${link("profile", { id: s.id })}">
+      <div class="roster-photo">${avatar(s)}</div><h3>${esc(s.name)}</h3>
+      ${juzStrip(s.juz)}
+      <div class="mini-pct">${s.pct}% · ${juzDone(s.juz)} of 30 juz</div></a>`).join("")}</div>` : "";
+}
+$("#search").addEventListener("input", (e) => { query = e.target.value; page = 1; refresh(); });
+start(refresh);
+</script>
+</body>
+</html>

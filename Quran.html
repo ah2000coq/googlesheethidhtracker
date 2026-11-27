@@ -1,0 +1,296 @@
+<script>
+// ===== Quran.html: Quran metadata, surah autocomplete, assessment + portion editors (Hifdh & Murajah pages) =====
+// Unchanged from the SPA (claude-hifdh-spa/hifdh-spa/progress.html lines 607-898). Pure browser code, no storage.
+// Quran metadata (Hafs, Madani 604-page mushaf). Surah names/counts: quran-json; page & juz starts: quran-meta.
+const SURAHS = [["الفاتحة","Al-Fatihah","The Opener",7],["البقرة","Al-Baqarah","The Cow",286],["آل عمران","Ali 'Imran","Family of Imran",200],["النساء","An-Nisa","The Women",176],["المائدة","Al-Ma'idah","The Table Spread",120],["الأنعام","Al-An'am","The Cattle",165],["الأعراف","Al-A'raf","The Heights",206],["الأنفال","Al-Anfal","The Spoils of War",75],["التوبة","At-Tawbah","The Repentance",129],["يونس","Yunus","Jonah",109],["هود","Hud","Hud",123],["يوسف","Yusuf","Joseph",111],["الرعد","Ar-Ra'd","The Thunder",43],["إبراهيم","Ibrahim","Abraham",52],["الحجر","Al-Hijr","The Rocky Tract",99],["النحل","An-Nahl","The Bee",128],["الإسراء","Al-Isra","The Night Journey",111],["الكهف","Al-Kahf","The Cave",110],["مريم","Maryam","Mary",98],["طه","Taha","Ta-Ha",135],["الأنبياء","Al-Anbiya","The Prophets",112],["الحج","Al-Hajj","The Pilgrimage",78],["المؤمنون","Al-Mu'minun","The Believers",118],["النور","An-Nur","The Light",64],["الفرقان","Al-Furqan","The Criterion",77],["الشعراء","Ash-Shu'ara","The Poets",227],["النمل","An-Naml","The Ant",93],["القصص","Al-Qasas","The Stories",88],["العنكبوت","Al-'Ankabut","The Spider",69],["الروم","Ar-Rum","The Romans",60],["لقمان","Luqman","Luqman",34],["السجدة","As-Sajdah","The Prostration",30],["الأحزاب","Al-Ahzab","The Combined Forces",73],["سبأ","Saba","Sheba",54],["فاطر","Fatir","Originator",45],["يس","Ya-Sin","Ya Sin",83],["الصافات","As-Saffat","Those who set the Ranks",182],["ص","Sad","The Letter Sad",88],["الزمر","Az-Zumar","The Troops",75],["غافر","Ghafir","The Forgiver",85],["فصلت","Fussilat","Explained in Detail",54],["الشورى","Ash-Shura","The Consultation",53],["الزخرف","Az-Zukhruf","The Ornaments of Gold",89],["الدخان","Ad-Dukhan","The Smoke",59],["الجاثية","Al-Jathiyah","The Crouching",37],["الأحقاف","Al-Ahqaf","The Wind-Curved Sandhills",35],["محمد","Muhammad","Muhammad",38],["الفتح","Al-Fath","The Victory",29],["الحجرات","Al-Hujurat","The Rooms",18],["ق","Qaf","The Letter Qaf",45],["الذاريات","Adh-Dhariyat","The Winnowing Winds",60],["الطور","At-Tur","The Mount",49],["النجم","An-Najm","The Star",62],["القمر","Al-Qamar","The Moon",55],["الرحمن","Ar-Rahman","The Beneficent",78],["الواقعة","Al-Waqi'ah","The Inevitable",96],["الحديد","Al-Hadid","The Iron",29],["المجادلة","Al-Mujadilah","The Pleading Woman",22],["الحشر","Al-Hashr","The Exile",24],["الممتحنة","Al-Mumtahanah","She that is to be examined",13],["الصف","As-Saf","The Ranks",14],["الجمعة","Al-Jumu'ah","The Congregation, Friday",11],["المنافقون","Al-Munafiqun","The Hypocrites",11],["التغابن","At-Taghabun","The Mutual Disillusion",18],["الطلاق","At-Talaq","The Divorce",12],["التحريم","At-Tahrim","The Prohibition",12],["الملك","Al-Mulk","The Sovereignty",30],["القلم","Al-Qalam","The Pen",52],["الحاقة","Al-Haqqah","The Reality",52],["المعارج","Al-Ma'arij","The Ascending Stairways",44],["نوح","Nuh","Noah",28],["الجن","Al-Jinn","The Jinn",28],["المزمل","Al-Muzzammil","The Enshrouded One",20],["المدثر","Al-Muddaththir","The Cloaked One",56],["القيامة","Al-Qiyamah","The Resurrection",40],["الإنسان","Al-Insan","The Man",31],["المرسلات","Al-Mursalat","The Emissaries",50],["النبأ","An-Naba","The Tidings",40],["النازعات","An-Nazi'at","Those who drag forth",46],["عبس","'Abasa","He Frowned",42],["التكوير","At-Takwir","The Overthrowing",29],["الانفطار","Al-Infitar","The Cleaving",19],["المطففين","Al-Mutaffifin","The Defrauding",36],["الانشقاق","Al-Inshiqaq","The Sundering",25],["البروج","Al-Buruj","The Mansions of the Stars",22],["الطارق","At-Tariq","The Night-Comer",17],["الأعلى","Al-A'la","The Most High",19],["الغاشية","Al-Ghashiyah","The Overwhelming",26],["الفجر","Al-Fajr","The Dawn",30],["البلد","Al-Balad","The City",20],["الشمس","Ash-Shams","The Sun",15],["الليل","Al-Layl","The Night",21],["الضحى","Ad-Duha","The Morning Hours",11],["الشرح","Ash-Sharh","The Relief",8],["التين","At-Tin","The Fig",8],["العلق","Al-'Alaq","The Clot",19],["القدر","Al-Qadr","The Power",5],["البينة","Al-Bayyinah","The Clear Proof",8],["الزلزلة","Az-Zalzalah","The Earthquake",8],["العاديات","Al-'Adiyat","The Courser",11],["القارعة","Al-Qari'ah","The Calamity",11],["التكاثر","At-Takathur","Rivalry in Increase",8],["العصر","Al-'Asr","The Declining Day",3],["الهمزة","Al-Humazah","The Traducer",9],["الفيل","Al-Fil","The Elephant",5],["قريش","Quraysh","Quraysh",4],["الماعون","Al-Ma'un","Small Kindnesses",7],["الكوثر","Al-Kawthar","The Abundance",3],["الكافرون","Al-Kafirun","The Disbelievers",6],["النصر","An-Nasr","The Divine Support",3],["المسد","Al-Masad","The Palm Fiber",5],["الإخلاص","Al-Ikhlas","The Sincerity",4],["الفلق","Al-Falaq","The Daybreak",5],["الناس","An-Nas","Mankind",6]];
+const PAGE_START = [1,8,13,24,32,37,45,56,65,69,77,84,91,96,101,109,113,120,127,134,142,149,153,161,171,177,184,189,194,198,204,210,218,223,227,232,238,241,245,253,256,260,264,267,272,277,282,289,290,294,303,309,316,323,331,339,346,355,364,371,377,385,394,402,409,415,426,434,442,447,451,459,467,474,480,488,494,500,505,508,513,517,520,527,531,538,545,553,559,568,573,580,585,588,595,599,607,615,621,628,634,641,648,656,664,669,672,675,679,683,687,693,701,706,711,715,720,727,734,740,746,752,759,765,773,778,783,790,798,808,817,825,834,842,849,858,863,871,880,884,891,900,908,914,921,927,932,936,941,947,955,966,977,985,992,998,1006,1012,1022,1028,1036,1042,1050,1059,1075,1085,1092,1098,1104,1110,1114,1118,1125,1133,1142,1150,1161,1169,1177,1186,1194,1201,1206,1213,1222,1230,1236,1242,1249,1256,1262,1267,1272,1276,1283,1290,1297,1304,1308,1315,1322,1329,1335,1342,1347,1353,1358,1365,1371,1379,1385,1390,1398,1407,1418,1426,1435,1443,1453,1462,1471,1479,1486,1493,1502,1511,1519,1527,1536,1545,1555,1562,1571,1582,1591,1601,1611,1619,1627,1634,1640,1649,1660,1666,1675,1683,1692,1700,1708,1713,1721,1726,1736,1742,1750,1756,1761,1769,1775,1784,1793,1803,1818,1834,1854,1873,1893,1908,1916,1928,1936,1944,1956,1966,1974,1981,1989,1995,2004,2012,2020,2030,2037,2047,2057,2068,2079,2088,2096,2105,2116,2126,2134,2145,2156,2161,2168,2175,2186,2194,2202,2215,2224,2238,2251,2262,2276,2289,2302,2315,2327,2346,2361,2386,2400,2413,2425,2436,2447,2462,2474,2484,2494,2508,2519,2528,2541,2556,2565,2574,2585,2596,2601,2611,2619,2626,2634,2642,2651,2660,2668,2674,2691,2701,2716,2733,2748,2763,2778,2792,2802,2812,2819,2823,2828,2835,2845,2850,2853,2858,2867,2876,2888,2899,2911,2923,2933,2952,2972,2993,3016,3044,3069,3092,3116,3139,3160,3173,3182,3195,3204,3215,3223,3236,3248,3258,3266,3274,3281,3288,3296,3303,3312,3323,3330,3337,3347,3355,3364,3371,3379,3386,3393,3404,3415,3425,3434,3442,3451,3460,3470,3481,3489,3498,3504,3515,3524,3534,3540,3549,3556,3564,3569,3577,3584,3588,3596,3607,3614,3621,3629,3638,3646,3655,3664,3672,3679,3691,3699,3705,3718,3733,3746,3760,3776,3789,3813,3840,3865,3891,3915,3942,3971,3987,3997,4013,4032,4054,4064,4069,4080,4090,4099,4106,4115,4126,4133,4141,4150,4159,4167,4174,4183,4192,4200,4211,4219,4230,4239,4248,4257,4265,4273,4283,4288,4295,4304,4317,4324,4336,4348,4359,4373,4386,4399,4415,4433,4454,4474,4487,4496,4506,4516,4525,4531,4539,4546,4557,4565,4575,4584,4593,4599,4607,4612,4617,4624,4631,4646,4666,4682,4706,4727,4750,4767,4785,4811,4829,4853,4874,4896,4918,4942,4969,4996,5030,5056,5079,5087,5094,5100,5105,5111,5116,5126,5130,5136,5143,5151,5156,5162,5169,5178,5186,5193,5200,5209,5218,5223,5230,5237,5242,5254,5268,5287,5314,5332,5358,5386,5415,5430,5448,5461,5476,5495,5513,5543,5571,5597,5617,5642,5673,5703,5728,5759,5801,5830,5855,5883,5910,5932,5964,5994,6017,6044,6073,6099,6126,6138,6156,6177,6194,6208,6222,6237]; // first ayah id of pages 1..604, then 6237
+const JUZ_START = [1,149,260,386,517,641,751,900,1042,1201,1328,1479,1649,1803,2030,2215,2484,2674,2876,3215,3386,3564,3733,4090,4265,4511,4706,5105,5242,5673]; // first ayah id of juz 1..30
+
+// ===== Quran helpers + surah autocomplete (Hifdh & Murajah pages) =====
+const TOTAL_AYAHS = 6236, TOTAL_PAGES = 604;
+const SURAH_START = [0]; // SURAH_START[s] = ayah id of s:1
+for (let s = 1, id = 1; s <= 114; s++) { SURAH_START[s] = id; id += SURAHS[s - 1][3]; }
+const sName = (s) => SURAHS[s - 1][1], sArabic = (s) => SURAHS[s - 1][0], sCount = (s) => SURAHS[s - 1][3];
+const aid = (s, a) => SURAH_START[s] + a - 1;
+const bsearch = (arr, v) => { let lo = 0, hi = arr.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; arr[m] <= v ? (lo = m) : (hi = m - 1); } return lo; };
+const pageOf = (id) => bsearch(PAGE_START, id) + 1;          // 1..604
+const juzOf = (id) => bsearch(JUZ_START, id) + 1;            // 1..30
+const surahOf = (id) => bsearch(SURAH_START.slice(1), id) + 1;
+const ayahNo = (id) => id - SURAH_START[surahOf(id)] + 1;
+const pageRange = (p1, p2) => [PAGE_START[p1 - 1], PAGE_START[p2] - 1];   // ayah-id interval of pages p1..p2
+const surahRange = (s1, s2) => [SURAH_START[Math.min(s1, s2)], SURAH_START[Math.max(s1, s2)] + sCount(Math.max(s1, s2)) - 1];
+
+// Page-weighted share of each juz covered by an ayah interval (so 1 page ≈ 5% of a 20-page juz).
+const AYAHS_ON_PAGE = Array.from({ length: TOTAL_PAGES }, (_, i) => PAGE_START[i + 1] - PAGE_START[i]);
+const JUZ_WEIGHT = Array(30).fill(0);
+for (let id = 1; id <= TOTAL_AYAHS; id++) JUZ_WEIGHT[juzOf(id) - 1] += 1 / AYAHS_ON_PAGE[pageOf(id) - 1];
+function juzShare(a1, a2) {
+  const w = Array(30).fill(0);
+  for (let id = a1; id <= a2; id++) w[juzOf(id) - 1] += 1 / AYAHS_ON_PAGE[pageOf(id) - 1];
+  return w.map((v, i) => (v / JUZ_WEIGHT[i]) * 100);
+}
+const juzList = (a1, a2) => { const out = []; for (let j = juzOf(a1); j <= juzOf(a2); j++) out.push(j); return out; };
+
+// Human description of an ayah-id interval.
+function describe(a1, a2) {
+  const s1 = surahOf(a1), s2 = surahOf(a2), x1 = ayahNo(a1), x2 = ayahNo(a2);
+  const whole1 = x1 === 1, whole2 = x2 === sCount(s2);
+  let text;
+  if (s1 === s2) text = whole1 && whole2 ? `${sName(s1)} (complete)` : `${sName(s1)} ${x1}–${x2}`;
+  else if (whole1 && whole2) text = `${sName(s1)} – ${sName(s2)}`;
+  else text = `${sName(s1)} ${x1} – ${sName(s2)} ${x2}`;
+  const p1 = pageOf(a1), p2 = pageOf(a2), j = juzList(a1, a2);
+  return { text, pages: p1 === p2 ? `p. ${p1}` : `pp. ${p1}–${p2}`, pageCount: p2 - p1 + 1, ayahs: a2 - a1 + 1,
+    juz: j.length === 1 ? `Juz ${j[0]}` : `Juz ${j[0]}–${j.at(-1)}`, juzNums: j };
+}
+
+// ---------- search ----------
+const toLatinDigits = (s) => s.replace(/[٠-٩]/g, (d) => d.charCodeAt(0) - 0x660).replace(/[۰-۹]/g, (d) => d.charCodeAt(0) - 0x6f0);
+const arKey = (s) => s.replace(/[\u064B-\u065F\u0670\u0640]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/ؤ/g, "و").replace(/ئ/g, "ي").replace(/\s+/g, "");
+const arNoAl = (k) => k.replace(/^ال/, "");
+const latinKey = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  .replace(/[^a-z]/g, "").replace(/dh/g, "z").replace(/ee/g, "i").replace(/oo|ou/g, "u").replace(/(.)\1+/g, "$1").replace(/h$/, "");
+const ARTICLE = /^(al|an|ar|as|at|ad|adh|ash|az|ath)[-\s']+/i;
+const ALIASES = { 3: ["Al Imran", "Aal Imran"], 9: ["Bara'ah", "Taubah", "براءة"], 17: ["Bani Isra'il", "بني إسرائيل"], 20: ["Ta Ha"],
+  36: ["Yaseen", "Yasin"], 40: ["Al-Mu'min", "المؤمن"], 41: ["Ha Mim Sajdah", "حم السجدة"], 47: ["Qital"], 76: ["Ad-Dahr", "الدهر"],
+  94: ["Alam Nashrah", "Inshirah", "ألم نشرح"], 111: ["Lahab", "Tabbat", "اللهب"], 112: ["Tawhid"], 96: ["Iqra"], 1: ["Fatiha", "Umm al-Kitab"],
+  55: ["Rahman"], 78: ["Amma", "عم"], 67: ["Tabarak", "تبارك"], 22: ["Haj"] };
+const INDEX = SURAHS.map(([ar, tr, en], i) => {
+  const s = i + 1, al = ALIASES[s] || [];
+  const latin = [tr, tr.replace(ARTICLE, ""), ...al.filter((x) => !/[\u0600-\u06FF]/.test(x))].map(latinKey);
+  const arab = [ar, ...al.filter((x) => /[\u0600-\u06FF]/.test(x))].map(arKey);
+  return { s, latin, arab: [...arab, ...arab.map(arNoAl)], english: en.toLowerCase().replace(/^the\s+/, "").split(/[^a-z]+/).filter(Boolean) };
+});
+const subseq = (q, k) => { let i = 0; for (const c of k) if (c === q[i]) i++; return i === q.length; };
+
+// Parse free text like "mulk 11-20", "67:1-10", "الملك ١-١٠", "surah 36". Returns {text, from, to}.
+function parseQuery(raw) {
+  let q = toLatinDigits(raw).replace(/\b(surah|surat|sura)\b|سورة|سوره/gi, " ").trim();
+  let from = null, to = null;
+  const m = q.match(/(?:[\s:.,]+|^)(\d{1,3})\s*(?:-|–|—|to|الى|إلى)\s*(\d{1,3})\s*$/i) || q.match(/[:.]\s*(\d{1,3})\s*$/);
+  if (m && q.slice(0, m.index).trim()) { from = +m[1]; to = m[2] ? +m[2] : +m[1]; q = q.slice(0, m.index).trim(); }
+  return { text: q, from, to };
+}
+function searchSurahs(raw, limit = 8) {
+  const { text } = parseQuery(raw);
+  if (!text) return [];
+  if (/^\d+$/.test(text)) {
+    const n = +text, out = [];
+    if (n >= 1 && n <= 114) out.push(n);
+    for (let s = 1; s <= 114 && out.length < limit; s++) if (s !== n && String(s).startsWith(text)) out.push(s);
+    return out;
+  }
+  const isAr = /[\u0600-\u06FF]/.test(text);
+  const qa = arKey(text), qaNoAl = arNoAl(qa), ql = latinKey(text.replace(ARTICLE, "")), qlFull = latinKey(text);
+  const scored = [];
+  for (const e of INDEX) {
+    let score = 0;
+    if (isAr) {
+      for (const k of e.arab) {
+        if (k === qa || k === qaNoAl) score = Math.max(score, 100);
+        else if (k.startsWith(qa) || k.startsWith(qaNoAl)) score = Math.max(score, 80);
+        else if (qaNoAl.length > 1 && k.includes(qaNoAl)) score = Math.max(score, 50);
+      }
+    } else if (ql) {
+      for (const k of e.latin) {
+        if (k === ql || k === qlFull) score = Math.max(score, 100);
+        else if (k.startsWith(ql) || k.startsWith(qlFull)) score = Math.max(score, 85);
+        else if (ql.length >= 3 && k.includes(ql)) score = Math.max(score, 55);
+        else if (ql.length >= 4 && subseq(ql, k)) score = Math.max(score, 20);
+      }
+      const qw = text.toLowerCase().replace(/^the\s+/, "");
+      if (qw.length >= 3 && e.english.some((w) => w.startsWith(qw))) score = Math.max(score, 60);
+    }
+    if (score) scored.push([score, e.s]);
+  }
+  return scored.sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, limit).map((x) => x[1]);
+}
+
+// ---------- autocomplete widget ----------
+// el: container div. opts.onPick({s, from, to}) ; opts.label ; opts.placeholder
+let acSeq = 0;
+function surahAutocomplete(el, opts = {}) {
+  const id = `ac${++acSeq}`;
+  el.classList.add("ac");
+  el.innerHTML = `<input id="${id}" type="text" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="${id}-list"
+      autocomplete="off" autocapitalize="off" spellcheck="false" dir="auto" placeholder="${esc(opts.placeholder || "Type surah name or number — e.g. Mulk, 67, الملك, mulk 1-10")}"
+      ${opts.label ? `aria-label="${esc(opts.label)}"` : ""}>
+    <ul id="${id}-list" role="listbox" class="ac-list" hidden></ul>`;
+  const input = el.querySelector("input"), list = el.querySelector("ul");
+  let items = [], active = -1, chosen = null;
+  const row = (s) => `<span class="ac-num">${s}</span><span class="ac-main"><strong>${esc(sName(s))}</strong><small>${esc(SURAHS[s - 1][2])} · ${sCount(s)} ayahs · p. ${pageOf(SURAH_START[s])} · Juz ${juzOf(SURAH_START[s])}</small></span><span class="ac-ar" lang="ar" dir="rtl">${esc(sArabic(s))}</span>`;
+  const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-activedescendant"); active = -1; };
+  const render = () => {
+    items = searchSurahs(input.value);
+    if (!items.length) {
+      list.innerHTML = input.value.trim() ? `<li class="ac-empty">No surah matches “${esc(input.value)}”</li>` : "";
+      list.hidden = !input.value.trim(); input.setAttribute("aria-expanded", String(!list.hidden)); return;
+    }
+    active = 0;
+    list.innerHTML = items.map((s, i) => `<li role="option" id="${id}-o${i}" data-s="${s}" aria-selected="${i === active}">${row(s)}</li>`).join("");
+    list.hidden = false; input.setAttribute("aria-expanded", "true"); input.setAttribute("aria-activedescendant", `${id}-o0`);
+  };
+  const highlight = (i) => {
+    active = (i + items.length) % items.length;
+    list.querySelectorAll("[role=option]").forEach((li, k) => li.setAttribute("aria-selected", String(k === active)));
+    input.setAttribute("aria-activedescendant", `${id}-o${active}`);
+    list.children[active]?.scrollIntoView({ block: "nearest" });
+  };
+  const pick = (s) => {
+    const { from, to } = parseQuery(input.value);
+    chosen = s; close();
+    input.value = `${s}. ${sName(s)} — ${sArabic(s)}`;
+    el.classList.add("chosen");
+    opts.onPick?.({ s, from: from && Math.min(from, sCount(s)), to: to && Math.min(Math.max(to, from || 1), sCount(s)) });
+  };
+  input.addEventListener("input", () => { if (chosen) { chosen = null; el.classList.remove("chosen"); opts.onClear?.(); } render(); });
+  input.addEventListener("focus", () => { if (!chosen && input.value) render(); else if (chosen) input.select(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); list.hidden ? render() : highlight(active + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); if (!list.hidden) highlight(active - 1); }
+    else if (e.key === "Enter") { if (!list.hidden && items.length) { e.preventDefault(); pick(items[Math.max(0, active)]); } }
+    else if (e.key === "Escape") close();
+    else if (e.key === "Tab" && !list.hidden && items.length && !chosen) pick(items[Math.max(0, active)]);
+  });
+  input.addEventListener("blur", () => setTimeout(close, 120));
+  list.addEventListener("mousedown", (e) => e.preventDefault());
+  list.addEventListener("click", (e) => { const li = e.target.closest("[data-s]"); if (li) pick(+li.dataset.s); });
+  return {
+    get value() { return chosen; },
+    set(s) { if (!s) { chosen = null; input.value = ""; el.classList.remove("chosen"); return; } chosen = s; input.value = `${s}. ${sName(s)} — ${sArabic(s)}`; el.classList.add("chosen"); },
+    focus() { input.focus(); }, input,
+  };
+}
+
+// ---------- shared assessment block (grade + mistake counters + note) ----------
+const GRADES = [["excellent", "Excellent", "ممتاز"], ["verygood", "Very good", "جيد جدا"], ["good", "Good", "جيد"], ["repeat", "Repeat", "إعادة"]];
+const gradeLabel = (g) => GRADES.find((x) => x[0] === g)?.[1] || "";
+function assessmentBlock() {
+  return `<fieldset class="assess"><legend>Ustad's assessment</legend>
+    <div class="seg grade" role="radiogroup" aria-label="Grade">${GRADES.map(([v, en, ar], i) =>
+      `<label class="seg-opt g-${v}"><input type="radio" name="grade" value="${v}" ${i === 0 ? "checked" : ""}><span>${en}<small lang="ar">${ar}</small></span></label>`).join("")}</div>
+    <div class="counters">
+      ${[["memory", "Memory mistakes", "أخطاء الحفظ"], ["tajweed", "Tajweed mistakes", "أخطاء التجويد"], ["prompts", "Prompts given", "تلقين"]].map(([k, en, ar]) => `
+      <div class="counter" data-k="${k}"><span class="c-label">${en}<small lang="ar">${ar}</small></span>
+        <button type="button" class="c-btn" data-d="-1" aria-label="Decrease ${en}">−</button>
+        <output name="m_${k}">0</output>
+        <button type="button" class="c-btn" data-d="1" aria-label="Increase ${en}">+</button></div>`).join("")}
+    </div>
+    <label>Note for this reading <span class="opt">(optional)</span><input name="note" maxlength="300" placeholder="e.g. hesitant at ayah 14, revise before next lesson"></label>
+  </fieldset>`;
+}
+function wireAssessment(form) {
+  form.querySelectorAll(".counter").forEach((c) => c.querySelectorAll(".c-btn").forEach((b) => (b.onclick = () => {
+    const o = c.querySelector("output"); o.value = Math.max(0, Math.min(99, Number(o.value) + Number(b.dataset.d)));
+  })));
+  return () => ({
+    grade: form.querySelector("input[name=grade]:checked")?.value || "",
+    mistakes: Object.fromEntries([...form.querySelectorAll(".counter")].map((c) => [c.dataset.k, Number(c.querySelector("output").value)])),
+    note: form.note.value.trim().slice(0, 300),
+  });
+}
+const assessSummary = (e) => {
+  if (!e.grade && !e.mistakes) return "";
+  const m = e.mistakes || {}, bits = [];
+  if (m.memory) bits.push(`${m.memory} memory`); if (m.tajweed) bits.push(`${m.tajweed} tajweed`); if (m.prompts) bits.push(`${m.prompts} prompts`);
+  return [gradeLabel(e.grade), bits.length ? bits.join(", ") : "no mistakes"].filter(Boolean).join(" · ");
+};
+
+// ---------- portion editor: one reading portion (ayah / page / surah range) ----------
+const MODE_LABEL = { ayah: "Ayah to ayah", page: "Page to page", surah: "Surah to surah" };
+const stepper = (name, label, min, max, val) => `<label class="st-label">${label}
+  <span class="stepper"><button type="button" class="st-btn" data-for="${name}" data-d="-1" aria-label="${label} minus one">−</button><input type="number" name="${name}" min="${min}" max="${max}" value="${val}" inputmode="numeric" aria-label="${label}"><button type="button" class="st-btn" data-for="${name}" data-d="1" aria-label="${label} plus one">+</button></span></label>`;
+
+function portionEditor(root, { modes, onChange, index, startFor }) {
+  let mode = modes[0], s = null, s2 = null;
+  const pid = `p${++acSeq}`;
+  root.className = "portion";
+  const render = () => {
+    root.innerHTML = `<div class="portion-head"><span class="portion-no">Portion ${index()}</span>
+        <div class="seg mode" role="radiogroup" aria-label="Capture by">${modes.map((m) => `<label class="seg-opt"><input type="radio" name="${pid}-mode" value="${m}" ${m === mode ? "checked" : ""}><span>${MODE_LABEL[m]}</span></label>`).join("")}</div>
+        <button type="button" class="icon-btn small danger p-remove" aria-label="Remove portion">${icon("x")}</button></div>
+      ${mode === "ayah" ? `<div class="ac-slot" data-k="s"></div><div class="range-2">${stepper("from", "From ayah", 1, 286, 1)}${stepper("to", "To ayah", 1, 286, 1)}</div>` : ""}
+      ${mode === "page" ? `<div class="ac-slot" data-k="s" data-hint="page"></div><div class="range-2">${stepper("from", "From page", 1, 604, 1)}${stepper("to", "To page", 1, 604, 1)}</div>` : ""}
+      ${mode === "surah" ? `<div class="range-2 ac-2"><div><span class="st-label">From surah</span><div class="ac-slot" data-k="s"></div></div><div><span class="st-label">To surah</span><div class="ac-slot" data-k="s2"></div></div></div>` : ""}
+      <p class="portion-sum" aria-live="polite"></p>`;
+    const q = (n) => root.querySelector(`input[name=${n}]`);
+    root.querySelectorAll(`input[name=${pid}-mode]`).forEach((r) => (r.onchange = () => { mode = r.value; s = s2 = null; render(); onChange(); }));
+    root.querySelectorAll(".st-btn").forEach((b) => (b.onclick = () => { const i = q(b.dataset.for); i.value = clampTo(Number(i.value) + Number(b.dataset.d), i); if (b.dataset.for === "from") syncTo(); refresh(); }));
+    root.querySelectorAll(".stepper input").forEach((i) => { i.oninput = refresh; i.onfocus = () => i.select(); i.onmouseup = (e) => e.preventDefault(); i.onchange = () => { i.value = clampTo(i.value, i); if (i.name === "from") syncTo(); refresh(); }; });
+    root.querySelectorAll(".ac-slot").forEach((slot) => {
+      const k = slot.dataset.k;
+      const ac = surahAutocomplete(slot, {
+        placeholder: slot.dataset.hint ? "Optional: type a surah to jump to its pages" : k === "s2" ? "Same as from surah" : undefined,
+        label: k === "s2" ? "To surah" : "Surah",
+        onPick: ({ s: picked, from, to }) => {
+          if (k === "s2") s2 = picked; else s = picked;
+          if (mode === "ayah") {
+            const n = sCount(picked), f = from || Math.min(n, startFor?.(picked) || 1), t = to || Math.min(n, f + 4);
+            q("from").max = q("to").max = n; q("from").value = f; q("to").value = Math.max(f, t);
+            if (!from) { q("to").focus(); q("to").select(); }
+          }
+          if (mode === "page") { const [a1, a2] = surahRange(picked, picked); q("from").value = pageOf(a1); q("to").value = pageOf(a2); }
+          refresh();
+        },
+        onClear: () => { if (k === "s2") s2 = null; else s = null; refresh(); },
+      });
+      root[`_${k}`] = ac;
+    });
+    refresh();
+  };
+  const clampTo = (v, i) => Math.max(Number(i.min), Math.min(Number(i.max), Math.round(Number(v)) || Number(i.min)));
+  const syncTo = () => { const f = root.querySelector("input[name=from]"), t = root.querySelector("input[name=to]"); if (Number(t.value) < Number(f.value)) t.value = f.value; };
+  const get = () => {
+    const f = Number(root.querySelector("input[name=from]")?.value), t = Number(root.querySelector("input[name=to]")?.value);
+    if (mode === "ayah") {
+      if (!s) return { mode, error: "Choose a surah" };
+      if (!(f >= 1 && t >= f && t <= sCount(s))) return { mode, error: `Ayahs must be 1–${sCount(s)}, with “to” not before “from”` };
+      return { mode, s, from: f, to: t, a1: aid(s, f), a2: aid(s, t) };
+    }
+    if (mode === "page") {
+      if (!(f >= 1 && t >= f && t <= TOTAL_PAGES)) return { mode, error: "Pages must be 1–604, with “to” not before “from”" };
+      const [a1, a2] = pageRange(f, t); return { mode, from: f, to: t, a1, a2 };
+    }
+    if (!s) return { mode, error: "Choose the first surah" };
+    const last = s2 || s, [a1, a2] = surahRange(s, last);
+    return { mode, from: s, to: last, a1, a2 };
+  };
+  const refresh = () => {
+    const g = get(), out = root.querySelector(".portion-sum");
+    if (g.error) { out.className = `portion-sum ${/^Choose/.test(g.error) ? "hint" : "warn"}`; out.textContent = /^Choose/.test(g.error) ? "Start typing a surah name, number or Arabic name above" : g.error; }
+    else { const d = describe(g.a1, g.a2); out.className = "portion-sum ok"; out.innerHTML = `<strong>${esc(d.text)}</strong> · ${d.ayahs} ayah${d.ayahs === 1 ? "" : "s"} · ${d.pages} · ${d.juz}`; }
+    onChange();
+  };
+  // Pre-fill (used by "continue from last").
+  const set = (v) => {
+    mode = v.mode; render();
+    const q = (n) => root.querySelector(`input[name=${n}]`);
+    if (v.mode === "ayah") { s = v.s; root._s.set(v.s); ["from", "to"].forEach((f) => (q(f).max = sCount(v.s))); q("from").value = v.from; q("to").value = v.to; }
+    if (v.mode === "page") { q("from").value = v.from; q("to").value = v.to; }
+    if (v.mode === "surah") { s = v.from; s2 = v.to; root._s.set(v.from); root._s2.set(v.to); }
+    refresh();
+  };
+  render();
+  return { get, set, root, focus: () => root.querySelector(".ac input, .stepper input")?.focus() };
+}
+
+// Manages a list of portions with Add / Remove.
+function portionList(container, addBtn, modes, onChange, startFor) {
+  const editors = [];
+  const renumber = () => editors.forEach((e, i) => { const n = e.root.querySelector(".portion-no"); if (n) n.textContent = `Portion ${i + 1}`; e.root.querySelector(".p-remove").hidden = editors.length === 1; });
+  const add = (preset) => {
+    const div = document.createElement("div"); container.append(div);
+    let ed = null;
+    ed = portionEditor(div, { modes, startFor, onChange: () => onChange?.(), index: () => (ed ? editors.indexOf(ed) + 1 : editors.length + 1) });
+    editors.push(ed);
+    div.addEventListener("click", (e) => { if (e.target.closest(".p-remove") && editors.length > 1) { editors.splice(editors.indexOf(ed), 1); div.remove(); renumber(); onChange?.(); } });
+    if (preset) ed.set(preset);
+    renumber(); onChange?.();
+    return ed;
+  };
+  addBtn.onclick = () => add().focus();
+  add();
+  return { all: () => editors.map((e) => e.get()), first: () => editors[0], reset: () => { editors.splice(0).forEach((e) => e.root.remove()); add(); } };
+}
+const portionText = (list) => list.map((p) => describe(p.a1, p.a2).text).join("; ");
+</script>
